@@ -265,14 +265,14 @@ struct DesktopRootView: View {
         .onChange(of: care.cycle.restDeadline) { _ in syncCare() }
         .onChange(of: desktop.compact) { _ in syncCare() }
         .onChange(of: model.pet?.growth.stage) { _ in syncCare() }
-        .onChange(of: reduceMotion) { _ in syncCare() }
+        .onChange(of: reduceMotion) { value in syncCare(reducedMotion: value) }
     }
-    private func syncCare() {
+    private func syncCare(reducedMotion: Bool? = nil) {
         let stage = model.pet?.growth.stage
         desktop.setRoaming(active: model.screen == .home && desktop.compact &&
             (stage == .hatchling || stage == .adult) && care.cycle.phase == .resting &&
             care.cycle.activity == .walk && !care.needsReset,
-            deadline: care.cycle.restDeadline, reduced: reduceMotion,
+            deadline: care.cycle.restDeadline, reduced: reducedMotion ?? reduceMotion,
             spriteSize: stage == .hatchling ? 72 : 96)
         guard model.screen == .home, let pet = model.pet, !care.needsReset else { return }
         care.bind(to: pet.id)

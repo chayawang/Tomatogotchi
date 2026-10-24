@@ -13,7 +13,7 @@
 
 ## 目前版本
 
-**1.0.2 build30，公開測試版**。下載包僅 Apple Silicon（arm64），最低宣告 macOS 13，但目前實機測試基準是 Apple Silicon／macOS 14.4.1；Intel及最低系統尚未實測。使用 ad-hoc 開發簽章，**未 Developer ID 簽章、未 Apple 公證**；下載後的 Finder／Gatekeeper 安裝及部分原生操作仍待人工補驗，不把自動渲染或程序檢查當作完整實機驗證。
+**1.0.2 build31，公開測試版**。下載包僅 Apple Silicon（arm64），最低宣告 macOS 13，但目前實機測試基準是 Apple Silicon／macOS 14.4.1；Intel及最低系統尚未實測。使用 ad-hoc 開發簽章，**未 Developer ID 簽章、未 Apple 公證**；下載後的 Finder／Gatekeeper 安裝及部分原生操作仍待人工補驗，不把自動渲染或程序檢查當作完整實機驗證。
 
 - 每輪工作與休息時間可自行設定，提供快捷建議值。
 - 工作時待機、睡覺、玩及小範圍走動；真正散步時可在目前螢幕桌面移動，到期返回。

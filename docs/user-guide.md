@@ -4,7 +4,7 @@
 
 唯一官方 App 下載頁：https://github.com/chayawang/Tomatogotchi/releases
 
-本版是1.0.2 build30公開測試版，僅提供Apple Silicon套件，未Developer ID簽章／未Apple公證。請核對檔名及官方SHA-256，解壓至自己選擇的位置後開啟。更新前先退出舊App並備份資料，不要同時啟動多個正式版本。
+本版是1.0.2 build31公開測試版，僅提供Apple Silicon套件，未Developer ID簽章／未Apple公證。請核對檔名及官方SHA-256，解壓至自己選擇的位置後開啟。更新前先退出舊App並備份資料，不要同時啟動多個正式版本。
 
 若macOS因未驗證開發者或未公證而阻擋，請先確認下載來源與風險；決定信任後，依[Apple官方說明](https://support.apple.com/102445)，在「系統設定→隱私權與安全性」對此App選擇「仍要打開」（字樣依版本而異）。不需要把Mac密碼或Apple ID密碼交給發布者。若提示惡意軟體、已損毀或會傷害電腦，請停止操作並回報，不要全面關閉Gatekeeper或繞過公司管理政策。下載後的真實Gatekeeper流程尚未補驗。
 

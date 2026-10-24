@@ -17,8 +17,27 @@ import DesktopCore
     func applicationDidFinishLaunching(_ notification: Notification) { NSApp.setActivationPolicy(.accessory) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
+private struct QAReduceMotionKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var qaReduceMotion: Bool {
+        get { self[QAReduceMotionKey.self] }
+        set { self[QAReduceMotionKey.self] = newValue }
+    }
+}
+@MainActor final class MotionInput: ObservableObject { @Published var reduced = false }
+@MainActor struct MotionRootHarness: View {
+    @ObservedObject var input: MotionInput
+    @ObservedObject var model: AdoptionModel
+    @ObservedObject var desktop: DesktopController
+    @ObservedObject var care: CareModel
+    var body: some View {
+        DesktopRootView(model: model, desktop: desktop, care: care)
+            .environment(\.qaReduceMotion, input.reduced)
+    }
+}
 @main @MainActor struct WindowMotionChecks: App {
     @NSApplicationDelegateAdaptor(MotionDelegate.self) private var delegate
+    @StateObject private var motionInput = MotionInput()
     @StateObject private var model: AdoptionModel
     @StateObject private var desktop: DesktopController
     @StateObject private var care: CareModel
@@ -32,13 +51,13 @@ import DesktopCore
         try! JSONEncoder().encode(pet).write(to: folder.appendingPathComponent("pet.json"))
         Theme.registerFont()
         _model = StateObject(wrappedValue: AdoptionModel(repository: PetRepository(directory: directory)))
-        _desktop = StateObject(wrappedValue: DesktopController(directory: directory))
+        _desktop = StateObject(wrappedValue: DesktopController(directory: directory, automaticallyRoams: false))
         _care = StateObject(wrappedValue: CareModel(directory: directory, ownsSession: true, reminderCenter: MotionReminder(),
             workspaceNotifications: NotificationCenter(), lockNotifications: NotificationCenter(), automaticallyTicks: false))
     }
     var body: some Scene {
         Window("Isolated window motion checks", id: "main") {
-            DesktopRootView(model: model, desktop: desktop, care: care)
+            MotionRootHarness(input: motionInput, model: model, desktop: desktop, care: care)
                 .onAppear { Task { await verify() } }
         }
         .windowStyle(.hiddenTitleBar)
@@ -51,6 +70,7 @@ import DesktopCore
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
             guard let window = NSApp.windows.first(where: { $0.title == "Isolated window motion checks" }) else { fatalError("No SwiftUI window") }
+            FileHandle.standardOutput.write(Data("Host Reduce Motion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion); QA positive case explicitly injects false, then checks true/false root changes.\n".utf8))
             window.orderOut(nil)
             var resizeCount = 0
             let observer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in resizeCount += 1 }
@@ -109,6 +129,17 @@ import DesktopCore
             let roamStart = window.frame
             desktop.advanceRoaming(now: Date(), elapsed: 0.1, visible: true)
             precondition(window.frame.origin != roamStart.origin, "Root-connected walking adapter translates its actual window")
+            motionInput.reduced = true
+            try snapshot("reduced-motion-on")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let reducedFrame = window.frame
+            desktop.advanceRoaming(now: Date(), elapsed: 0.1, visible: true)
+            precondition(window.frame == reducedFrame, "Real root Reduce Motion stops displacement")
+            motionInput.reduced = false
+            try snapshot("reduced-motion-off")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            desktop.advanceRoaming(now: Date(), elapsed: 0.1, visible: true)
+            precondition(window.frame.origin != reducedFrame.origin, "Real root resumes displacement after Reduce Motion is disabled")
             desktop.toggleCompact()
             try await Task.sleep(nanoseconds: 300_000_000)
             precondition(!desktop.isRoaming && window.contentView!.frame.size == CGSize(width: 247, height: 304),
