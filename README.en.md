@@ -34,6 +34,16 @@ Requires macOS, Apple Command Line Tools (`xcode-select --install`), and Swift 5
 bash scripts/build-app.sh
 ```
 
+### XCTest / PlatformPath warnings during a build
+
+Some environments using only Command Line Tools report `could not determine XCTest paths` or `unable to lookup item 'PlatformPath'`. The [SwiftPM upstream report](https://github.com/swiftlang/swift-package-manager/issues/7480) describes both warnings and failed builds, depending on the tools in use.
+
+Confirm that this invocation finishes successfully (exit code 0) and ends with `Built: .../build/Tomatogotchi.app`. `Generated editable pixel egg...` only confirms icon generation. The warning alone, or an App left by an earlier build, does not establish success.
+
+If the build stops, update Command Line Tools to a version compatible with your macOS and retry. Inspect the selected tools with `xcode-select -p` and `swift --version`. If full Xcode is already installed, follow [Apple's tool selection instructions](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings): select the installed Xcode version under **Xcode → Settings → Locations → Command Line Tools**, then rerun the build. This is a troubleshooting option, not a guaranteed fix for every error. If it still fails, report your macOS/Swift versions and the full error, removing private information such as personal paths first.
+
+Downloading and using the App from [official Releases](https://github.com/chayawang/Tomatogotchi/releases) does not require Xcode or Command Line Tools.
+
 The App is created at `build/Tomatogotchi.app`. Run the complete automated checks with:
 
 ```sh

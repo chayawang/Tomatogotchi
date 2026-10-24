@@ -34,6 +34,16 @@ macOS、Apple Command Line Tools（`xcode-select --install`）、Swift 5.9また
 bash scripts/build-app.sh
 ```
 
+### ビルド中のXCTest／PlatformPath警告
+
+Command Line Toolsのみを使用する一部の環境では、`could not determine XCTest paths`や`unable to lookup item 'PlatformPath'`が表示されることがあります。[SwiftPMの報告](https://github.com/swiftlang/swift-package-manager/issues/7480)では、使用するツールによって警告だけの場合とビルドが中断する場合が記録されています。
+
+今回のコマンドが正常終了（終了コード0）し、最後に`Built: .../build/Tomatogotchi.app`が表示されることを確認してください。`Generated editable pixel egg...`はアイコン生成の完了だけを示します。警告だけ、または以前のビルドで残ったAppの存在だけでは、今回の成功は判断できません。
+
+中断した場合は、現在のmacOSに対応するCommand Line Toolsを更新して再試行してください。選択中のツールは`xcode-select -p`と`swift --version`で確認できます。完全版Xcodeをインストール済みなら、[Appleのツール選択手順](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings)に従い、**Xcode → Settings → Locations → Command Line Tools**でインストール済みのXcodeを選び、再ビルドする方法もあります。これは切り分けの選択肢であり、すべてのエラーの解決を保証しません。改善しない場合は、個人のパスなどの私的情報を除いたうえで、macOS／Swiftのバージョンとエラー全体を報告してください。
+
+[公式Releases](https://github.com/chayawang/Tomatogotchi/releases)からAppをダウンロードして利用するだけなら、XcodeやCommand Line Toolsは不要です。
+
 生成先は`build/Tomatogotchi.app`です。自動検証一式：
 
 ```sh
