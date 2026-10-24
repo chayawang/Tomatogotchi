@@ -1,5 +1,7 @@
 # Tomatogotchi
 
+[繁體中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+
 住在 Mac 桌面角落的像素電子雞：透過工作計時、照顧與休息，一起養成陪伴習慣。不必登入、不需要 AI API。
 
 ## 官方來源與安全

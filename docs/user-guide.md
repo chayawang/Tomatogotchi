@@ -1,5 +1,7 @@
 # Tomatogotchi 使用與安裝
 
+[繁體中文](user-guide.md) · [English](user-guide.en.md) · [日本語](user-guide.ja.md)
+
 ## 下載與開啟
 
 唯一官方 App 下載頁：https://github.com/chayawang/Tomatogotchi/releases
