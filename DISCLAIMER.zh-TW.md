@@ -1,5 +1,7 @@
 # Tomatogotchi｜官方下載來源、安全提醒與免責聲明
 
+[繁體中文](DISCLAIMER.zh-TW.md) · [English](DISCLAIMER.en.md) · [日本語](DISCLAIMER.ja.md)
+
 適用發布基準：1.0.2 build31；後續版本以各版公告及授權條款為準。
 
 ## 唯一官方下載管道

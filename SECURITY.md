@@ -1,5 +1,7 @@
 # 安全政策
 
+[繁體中文](SECURITY.md) · [English](SECURITY.en.md) · [日本語](SECURITY.ja.md)
+
 ## 官方來源
 
 原始碼：https://github.com/chayawang/Tomatogotchi

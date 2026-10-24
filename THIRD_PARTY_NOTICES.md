@@ -1,5 +1,7 @@
 # 授權與來源
 
+[繁體中文](THIRD_PARTY_NOTICES.md) · [English](THIRD_PARTY_NOTICES.en.md) · [日本語](THIRD_PARTY_NOTICES.ja.md)
+
 ## 本專案
 
 Tomatogotchi程式及本專案原創像素角色、墓碑、機身與圖示來源，依根目錄BSD-3-Clause LICENSE提供，著作權署名使用公開帳號chayawang。標準授權不授予冒充官方或擅自使用著作權人／貢獻者名字為衍生產品背書的權利；不因此禁止授權允許的修改、再散布或商業利用。
