@@ -222,7 +222,7 @@ struct PetDeviceView: View {
     var body: some View {
         Group {
             if desktop.compact {
-                PetOnlyView(pet: pet, visualContext: visualContext, roamsDesktop: care.cycle.phase == .resting && care.cycle.activity == .walk && (pet?.growth.stage == .hatchling || pet?.growth.stage == .adult)) { desktop.toggleCompact() }
+                PetOnlyView(pet: pet, hatchingRequestID: care.hatchingPresentationID, onHatchingReady: care.confirmHatchingPresentation, attention: care.completionNoticeID != nil && !dead, acknowledge: care.acknowledgeCompletion, visualContext: visualContext, roamsDesktop: care.cycle.phase == .resting && care.cycle.activity == .walk && (pet?.growth.stage == .hatchling || pet?.growth.stage == .adult)) { desktop.toggleCompact() }
             } else {
                 device.scaleEffect(DevicePresentation.scale)
                     .frame(width: DevicePresentation.size.width, height: DevicePresentation.size.height)
@@ -238,12 +238,13 @@ struct PetDeviceView: View {
                     VitalMeter(label: "健康", value: pet?.growth.health ?? 5)
                     VitalMeter(label: "心情", value: pet?.growth.mood ?? 5)
                 }
-                PetStage(pet: pet, height: 78, framed: false, visualContext: visualContext)
+                PetStage(pet: pet, height: 78, framed: false, visualContext: visualContext, hatchingRequestID: care.hatchingPresentationID, onHatchingReady: care.confirmHatchingPresentation)
+                    .modifier(CompletionAttention(active: care.completionNoticeID != nil && !dead))
                     .background(Color.clear)
                 Text(title).font(Theme.font(11, bold: true))
                     .multilineTextAlignment(.center).lineLimit(2)
                 if !time.isEmpty { Text(time).font(.system(size: 22, weight: .medium, design: .monospaced)).accessibilityLabel(time) }
-                Text(note).font(Theme.font(9)).foregroundStyle(Theme.muted)
+                Text(care.completionNoticeID != nil && !dead ? "時間到了，準備休息吧" : note).font(Theme.font(9)).foregroundStyle(Theme.muted)
                     .multilineTextAlignment(.center).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }.padding(.horizontal, 8).padding(.vertical, 10)
         } controls: {
@@ -251,7 +252,7 @@ struct PetDeviceView: View {
                 DeviceKey(title: leftTitle, symbol: leftSymbol, shellColor: desktop.shellColor, lightLabel: lightLabel, action: leftAction)
                     .disabled(model.saving || (dead && !model.farewellConfirming))
                 DeviceKey(title: mainTitle, symbol: mainSymbol, primary: true, shellColor: desktop.shellColor, lightLabel: lightLabel, action: mainAction)
-                    .disabled(model.saving || (care.cycle.phase == .restComplete && !receiptSaved && model.progressError == nil && !dead))
+                    .disabled(model.saving || care.hatchingPresentationID != nil || (care.cycle.phase == .restComplete && !receiptSaved && model.progressError == nil && !dead))
                     .keyboardShortcut(.defaultAction)
                 DeviceKey(title: "選單", symbol: "ellipsis", shellColor: desktop.shellColor, lightLabel: lightLabel) { menuOpen.toggle() }
                     .popover(isPresented: $menuOpen, arrowEdge: .top) {
@@ -319,15 +320,21 @@ struct PetDeviceView: View {
 struct PetOnlyView: View {
     @Environment(\.openWindow) private var openWindow
     let pet: Pet?
+    var hatchingRequestID: UUID?
+    var onHatchingReady: ((UUID) -> Void)?
+    var attention = false
+    var acknowledge: () -> Void = {}
     var visualContext: PetVisualContext = .wandering
     var roamsDesktop = false
     var restore: () -> Void
     var body: some View {
-        PetStage(pet: pet, height: 112, framed: false, visualContext: visualContext, movesWithinContainer: !roamsDesktop)
+        PetStage(pet: pet, height: 112, framed: false, visualContext: visualContext, movesWithinContainer: !roamsDesktop, hatchingRequestID: hatchingRequestID, onHatchingReady: onHatchingReady)
+            .modifier(CompletionAttention(active: attention))
             .frame(width: roamsDesktop ? 112 : 144, height: 112).padding(8)
             .overlay(WindowDragRegion(region: .pet))
             .contentShape(Rectangle())
             .contextMenu {
+                if attention { Button("知道了，停止提醒動態", action: acknowledge) }
                 Button("回到一般視窗", action: restore)
                 Button("死亡寵物紀錄") { openWindow(id: "memorial") }
             }
@@ -362,6 +369,9 @@ struct DeviceMenuView: View {
                 })
     }
     var body: some View {
+        ScrollView { menuContent }.frame(width: 256, height: 620)
+    }
+    private var menuContent: some View {
         VStack(alignment: .leading, spacing: DeviceMenuMetrics.sectionGap) {
             Text("電子雞設定").font(Theme.font(15, bold: true))
             VStack(spacing: DeviceMenuMetrics.sectionGap) {
@@ -381,6 +391,23 @@ struct DeviceMenuView: View {
                 Button("恢復預設顏色") { desktop.setShellColor(.default) }
                     .font(Theme.font(10)).foregroundStyle(Theme.muted).buttonStyle(.plain)
             }.padding(DeviceMenuMetrics.sectionGap).background(Theme.canvas, in: RoundedRectangle(cornerRadius: DeviceMenuMetrics.sectionRadius))
+            Text("到時提醒").font(Theme.font(12, bold: true))
+            HStack(spacing: 8) {
+                ForEach(CompletionReminderMode.allCases, id: \.self) { mode in
+                    Button(mode.title) { care.setReminderMode(mode) }
+                        .buttonStyle(.plain).font(Theme.font(11, bold: true))
+                        .padding(8).frame(maxWidth: .infinity)
+                        .foregroundStyle(care.reminderMode == mode ? Theme.surface : Theme.ink)
+                        .background(care.reminderMode == mode ? Theme.ink : Theme.canvas, in: RoundedRectangle(cornerRadius: 6))
+                        .accessibilityAddTraits(care.reminderMode == mode ? .isSelected : [])
+                }
+            }
+            Text(care.reminderMode == .gentle ? "電子雞動態提醒，不打斷目前工作。" : "電子雞動態＋螢幕中央彈窗。")
+                .font(Theme.font(10)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            if care.completionNoticeID != nil {
+                Button("知道了，停止提醒動態", action: care.acknowledgeCompletion)
+            }
+            if let error = care.reminderPreferenceError { Text(error).font(Theme.font(10)).foregroundStyle(.red) }
             DurationSettingsView(care: care, savedReceipt: savedReceipt)
             menuButton("只顯示寵物", symbol: "arrow.down.right.and.arrow.up.left") { dismiss(); desktop.toggleCompact() }
             menuButton("死亡寵物紀錄", symbol: "book.closed") { dismiss(); openWindow(id: "memorial") }
@@ -419,7 +446,10 @@ struct DurationSettingsView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("每輪時間").font(Theme.font(12, bold: true))
+            Text(care.cycle.phase == .resting ? "下一輪時間" : "每輪時間").font(Theme.font(12, bold: true))
+            Text("專注期間無法調整；休息時可設定下一次的專注時間。")
+                .font(Theme.font(10)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
             minuteField("工作", value: $work, options: [10, 20, 30, 60])
             minuteField("休息", value: $rest, options: [5, 10, 15])
             Button("套用時間") {
@@ -428,14 +458,17 @@ struct DurationSettingsView: View {
             }.buttonStyle(.plain).font(Theme.font(11, bold: true))
                 .padding(8).background(Theme.canvas, in: RoundedRectangle(cornerRadius: 6))
                 .disabled(!editable)
-            Text(feedback ?? (editable ? "可自行輸入 1–1440 分鐘；每輪都能重新設定。" : "先收工或完成休息並保存成長，再設定下一輪。"))
+            Text(feedback ?? (editable
+                ? (care.cycle.phase == .resting ? "僅套用下一輪，不影響這次休息倒數。可輸入 1–1440 分鐘。" : "可自行輸入 1–1440 分鐘；每輪都能重新設定。")
+                : "專注中與暫停時不能調整，收工或進入休息後即可設定；休息完成需先保存成長。"))
                 .font(Theme.font(10)).foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear {
-            work = String(Int(care.cycle.workDuration / 60))
-            rest = String(Int(care.cycle.breakDuration / 60))
+            work = String(Int(care.cycle.configuredWorkDuration / 60))
+            rest = String(Int(care.cycle.configuredBreakDuration / 60))
         }
+        .onChange(of: care.cycle.phase) { _ in feedback = nil }
     }
     private func minuteField(_ title: String, value: Binding<String>, options: [Int]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -454,6 +487,21 @@ struct DurationSettingsView: View {
                         .disabled(!editable)
                 }
             }
+        }
+    }
+}
+
+/// Discrete, low-frequency movement; static outline remains with Reduce Motion.
+struct CompletionAttention: ViewModifier {
+    var active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.petMotionVisible) private var visible
+    func body(content: Content) -> some View {
+        TimelineView(.animation(minimumInterval: 0.35, paused: !active || reduceMotion || !visible)) { timeline in
+            let step = Int(timeline.date.timeIntervalSinceReferenceDate / 0.35) % 4
+            content
+                .offset(x: active && !reduceMotion && visible ? (step == 1 ? -5 : step == 3 ? 5 : 0) : 0)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? Theme.ink : Color.clear, lineWidth: 3))
         }
     }
 }

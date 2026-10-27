@@ -38,7 +38,7 @@ public struct PetGrowth: Codable, Equatable, Sendable {
     public private(set) var deathReason: DeathReason?
     public private(set) var needs: [String: NeedRecord] = [:]
     private enum CodingKeys: String, CodingKey {
-        case species, completedRests, neglectedSeconds, departedAt, health, mood, deathReason, needs
+        case species, hasCompletedWork, hasHatched, completedRests, neglectedSeconds, departedAt, health, mood, deathReason, needs
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,9 +50,17 @@ public struct PetGrowth: Codable, Equatable, Sendable {
         mood = try c.decodeIfPresent(Int.self, forKey: .mood) ?? 5
         deathReason = try c.decodeIfPresent(DeathReason.self, forKey: .deathReason)
         needs = try c.decodeIfPresent([String: NeedRecord].self, forKey: .needs) ?? [:]
+        // Earlier saves only recorded rests and pending care; derive eligibility
+        // without rewriting their original bytes or counting new early rests.
+        let storedWork = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedWork)
+        hasCompletedWork = storedWork ?? (!completedRests.isEmpty || !needs.isEmpty)
+        // build33/34 already hatched on completed work. Older files retain
+        // their original three-rest stage until the next explicit care response.
+        hasHatched = try c.decodeIfPresent(Bool.self, forKey: .hasHatched)
+            ?? storedWork ?? (completedRests.count >= 3)
     }
     public func hasProcessedNeed(id: UUID, steps: Int, responding: Bool = false) -> Bool {
-        guard let record = needs[id.uuidString] else { return steps == 0 && !responding }
+        guard let record = needs[id.uuidString] else { return false }
         return record.responded || (record.steps >= steps && !responding)
     }
     /// Cumulative steps + response live in pet.json, so a timer replay cannot
@@ -74,14 +82,18 @@ public struct PetGrowth: Codable, Equatable, Sendable {
             record.responded = true
         }
         needs[key] = record
+        hasCompletedWork = true
+        if record.responded { hasHatched = true }
     }
+    public private(set) var hasCompletedWork = false
+    public private(set) var hasHatched = false
     public private(set) var completedRests: Set<String> = []
     public private(set) var neglectedSeconds: TimeInterval = 0
     public private(set) var departedAt: Date?
     public var stage: GrowthStage {
         if departedAt != nil { return .departed }
         if completedRests.count >= 12 { return .adult }
-        return completedRests.count >= 3 ? .hatchling : .egg
+        return hasHatched ? .hatchling : .egg
     }
     public var isWeak: Bool { departedAt == nil && (health <= 2 || mood <= 2 || (stage != .egg && neglectedSeconds >= 50 * 60)) }
     public var label: String {
@@ -114,7 +126,7 @@ public struct PetGrowth: Codable, Equatable, Sendable {
               departedAt?.timeIntervalSince1970.isFinite ?? true else { throw PetError.damagedSave }
         guard (0...5).contains(health), (0...5).contains(mood),
               needs.allSatisfy({ UUID(uuidString: $0.key) != nil && (0...5).contains($0.value.steps) }) else { throw PetError.damagedSave }
-        if completedRests.count < 3 && neglectedSeconds != 0 { throw PetError.damagedSave }
+        if !hasCompletedWork && completedRests.count < 12 && neglectedSeconds != 0 { throw PetError.damagedSave }
         if let reason = deathReason {
             guard departedAt != nil, reason == .hunger ? health == 0 : mood == 0 else { throw PetError.damagedSave }
         } else if (departedAt != nil) != (neglectedSeconds == 75 * 60) { throw PetError.damagedSave }

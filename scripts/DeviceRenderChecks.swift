@@ -34,10 +34,31 @@ struct DeviceRenderChecks {
         window.close()
         return bitmap
     }
-    static func main() async throws {
-        _ = NSApplication.shared
+    static func main() {
+        // AppKit owns the main run loop. Start async repository work from its
+        // actor task rather than the Swift 5.10 async command-line trampoline.
+        let app = NSApplication.shared
         Theme.registerFont()
-        let output = URL(fileURLWithPath: CommandLine.arguments[1])
+        Task { @MainActor in
+            do {
+                try await runChecks(output: URL(fileURLWithPath: CommandLine.arguments[1]))
+                exit(0)
+            } catch { fatalError("Device rendering failed: \(error)") }
+        }
+        app.run()
+    }
+    static func runChecks(output: URL) async throws {
+        try renderMemorials(output: output)
+        var count = 0
+        for state in ["idle", "work", "food", "walk", "paused", "rest", "complete", "dead", "confirm", "long-name", "white-shell", "black-shell", "green-shell", "attention"] {
+            for compact in [false, true] {
+                count += try await renderState(state, compact: compact, output: output)
+            }
+        }
+        count += try renderKeys(output: output)
+        print("PASS DeviceRenderChecks: \(count) actual PetDeviceView renders, 13 states plus 20 actual key palette samples, normal/pet-only, 1x/2x, transparent outer corners, custom colors, visible pet and settings menu; OS interactions remain separate")
+    }
+    static func renderMemorials(output: URL) throws {
         let now = Date(timeIntervalSince1970: 1000)
         var memorialPets: [PetMemorial] = []
         for n in 0..<30 {
@@ -60,88 +81,115 @@ struct DeviceRenderChecks {
             }
         }
         print("PASS MemorialContent: 12 actual SwiftUI renders for empty/one/30/partial/unreadable/error at 1x and 2x; native scroll/click pending")
-        var count = 0
-        for state in ["idle", "work", "food", "walk", "paused", "rest", "complete", "dead", "confirm", "long-name", "white-shell", "black-shell", "green-shell"] {
-            for compact in [false, true] {
-                let folder = output.appendingPathComponent("data-\(state)-\(compact)")
-                let repo = PetRepository(directory: folder)
-                var pet = try Pet(name: state == "long-name" ? "這是一個非常非常長的名字也要能夠顯示" : "小葉")
-                if state != "idle" && state != "long-name" {
-                    for i in 0..<3 { try pet.completeRest(id: "qa-\(i)", food: true, now: now) }
-                }
-                if state == "dead" || state == "confirm" {
-                    try pet.applyNeed(id: UUID(), food: false, steps: 5, responding: false, now: now)
-                }
-                _ = try await repo.adopt(pet)
-                var cycle = try CareCycle(workDuration: 300)
-                cycle.bind(to: pet.id)
-                if state != "idle" && state != "long-name" {
-                    cycle.start(demand: state == "walk" ? .walk : .food)
-                    if ["food", "walk", "paused"].contains(state) { cycle.advance(workElapsed: 300, now: now) }
-                    if state == "rest" || state == "complete" {
-                        cycle.rest(.food, now: now)
-                        if state == "complete" {
-                            cycle.advance(workElapsed: 0, now: now.addingTimeInterval(300))
-                            let receipt = cycle.completedReceipt!
-                            _ = try await repo.completeRest(id: pet.id, receipt: receipt.id, food: true, now: receipt.completedAt)
-                        }
-                    }
-                }
-                try CareStore(directory: folder).save(cycle)
-                let model = AdoptionModel(repository: repo)
-                model.load()
-                for _ in 0..<10000 { if model.screen == .home { break }; await Task.yield() }
-                precondition(model.screen == .home)
-                if state == "confirm" { model.farewellConfirming = true }
-                let care = CareModel(directory: folder, ownsSession: true, reminderCenter: RenderCenter(),
-                    workspaceNotifications: NotificationCenter(), lockNotifications: NotificationCenter(), automaticallyTicks: false,
-                    now: { state == "complete" ? now.addingTimeInterval(300) : now }, uptime: { 100 })
-                if state == "work" || state == "food" || state == "walk" { care.resume() }
-                let desktop = DesktopController(directory: folder, ownsSession: false)
-                if compact { desktop.toggleCompact() }
-                if state == "walk" { desktop.setShellColor(ShellColor(red: 0.94, green: 0.52, blue: 0.65)) }
-                if state == "confirm" { desktop.setShellColor(ShellColor(red: 0.12, green: 0.16, blue: 0.22)) }
-                if state == "white-shell" { desktop.setShellColor(ShellColor(red: 1, green: 1, blue: 1)) }
-                if state == "black-shell" { desktop.setShellColor(ShellColor(red: 0, green: 0, blue: 0)) }
-                if state == "green-shell" { desktop.setShellColor(ShellColor(red: 0, green: 1, blue: 0)) }
-                if state == "food" { precondition(care.needTime == "03:00") }
-                if state == "idle" && !compact {
-                    let menu = DeviceMenuView(desktop: desktop, care: care, savedReceipt: nil, canRename: true, canStop: true, rename: {}, stop: {}, dismiss: {})
-                    // Native NSColorWell/NSSwitch cannot be drawn by ImageRenderer.
-                    // Host only this fake-data menu in an undisplayed AppKit window.
-                    let host = NSHostingView(rootView: menu.background(Color.white))
-                    let size = host.fittingSize
-                    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-                    window.isReleasedWhenClosed = false
-                    window.contentView = host
-                    host.frame = CGRect(origin: .zero, size: size)
-                    host.layoutSubtreeIfNeeded()
-                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-                    guard let menuBitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("Menu bitmap") }
-                    host.cacheDisplay(in: host.bounds, to: menuBitmap)
-                    precondition(!window.isVisible, "Menu snapshot cannot show a window")
-                    try menuBitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("settings-menu-native.png"))
-                    window.close()
-                }
-                let view = PetDeviceView(model: model, care: care, desktop: desktop)
-                    .environment(\.petMotionVisible, false)
-                for scale in [1,2] {
-                    let size = compact ? CGSize(width: 160, height: 128) : CGSize(width: 247, height: 304)
-                    let bitmap = nativeBitmap(view, size: size, scale: scale)
-                    let w = Int(size.width)*scale, h = Int(size.height)*scale
-                    precondition(bitmap.pixelsWide == w && bitmap.pixelsHigh == h, "Device has stable bounds")
-                    for (x,y) in [(0,0),(w-1,0),(0,h-1),(w-1,h-1),(w/2,0)] {
-                        precondition(bitmap.colorAt(x: x, y: y)!.alphaComponent == 0, "Outside shell must be transparent")
-                    }
-                    if !compact { precondition(bitmap.colorAt(x: w/2, y: h/2)!.alphaComponent == 1, "LCD must be visible") }
-                    let opaque = (0..<h).contains { y in (0..<w).contains { x in bitmap.colorAt(x: x, y: y)!.alphaComponent > 0 } }
-                    precondition(opaque, "Every mode must show the pet")
-                    guard let png = bitmap.representation(using: .png, properties: [:]) else { fatalError("PNG") }
-                    try png.write(to: output.appendingPathComponent("\(state)-\(compact ? "compact" : "full")-\(scale)x.png"))
-                    count += 1
+        let reminderBitmap = nativeBitmap(CompletionReminderView(demand: "牠肚子餓了。", dismiss: {}, showPet: {}), size: CGSize(width: 360, height: 200), scale: 2)
+        try reminderBitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("completion-panel-2x.png"))
+    }
+    static func renderState(_ state: String, compact: Bool, output: URL) async throws -> Int {
+        let now = Date(timeIntervalSince1970: 1000)
+        let folder = output.appendingPathComponent("data-\(state)-\(compact)")
+        let repo = PetRepository(directory: folder)
+        var pet = try Pet(name: state == "long-name" ? "這是一個非常非常長的名字也要能夠顯示" : "小葉")
+        if state != "idle" && state != "long-name" {
+            try pet.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: now)
+            for i in 0..<3 { try pet.completeRest(id: "qa-\(i)", food: true, now: now) }
+        }
+        if state == "dead" || state == "confirm" {
+            try pet.applyNeed(id: UUID(), food: false, steps: 5, responding: false, now: now)
+        }
+        _ = try await repo.adopt(pet)
+        var cycle = try CareCycle(workDuration: 300)
+        cycle.bind(to: pet.id)
+        if state != "idle" && state != "long-name" {
+            cycle.start(demand: state == "walk" ? .walk : .food)
+            if ["food", "walk", "paused"].contains(state) { cycle.advance(workElapsed: 300, now: now) }
+            if state == "rest" || state == "complete" {
+                cycle.rest(.food, now: now)
+                if state == "complete" {
+                    cycle.advance(workElapsed: 0, now: now.addingTimeInterval(300))
+                    let receipt = cycle.completedReceipt!
+                    _ = try await repo.completeRest(id: pet.id, receipt: receipt.id, food: true, now: receipt.completedAt)
                 }
             }
         }
+        try CareStore(directory: folder).save(cycle)
+        let model = AdoptionModel(repository: repo)
+        model.load()
+        for _ in 0..<10000 { if model.screen == .home { break }; await Task.yield() }
+        precondition(model.screen == .home)
+        if state == "confirm" { model.farewellConfirming = true }
+        return try renderPresentation(state, compact: compact, output: output, folder: folder, now: now, pet: pet, model: model)
+    }
+    // Keep AppKit's synchronous layout/run-loop and generic SwiftUI values out
+    // of the async entry frame. All original states and assertions remain.
+    static func renderPresentation(_ state: String, compact: Bool, output: URL, folder: URL, now: Date, pet: Pet, model: AdoptionModel) throws -> Int {
+        var count = 0
+        var uptime: TimeInterval = 100
+        let care = CareModel(directory: folder, ownsSession: true, reminderCenter: RenderCenter(),
+            workspaceNotifications: NotificationCenter(), lockNotifications: NotificationCenter(), automaticallyTicks: false,
+            now: { state == "complete" ? now.addingTimeInterval(300) : now }, uptime: { uptime })
+        if state == "work" || state == "food" || state == "walk" { care.resume() }
+        if state == "attention" {
+            care.stop(); care.start(for: pet.id)
+            uptime += 300; care.refresh()
+            precondition(care.completionNoticeID != nil)
+        }
+        let desktop = DesktopController(directory: folder, ownsSession: false)
+        if compact { desktop.toggleCompact() }
+        if state == "walk" { desktop.setShellColor(ShellColor(red: 0.94, green: 0.52, blue: 0.65)) }
+        if state == "confirm" { desktop.setShellColor(ShellColor(red: 0.12, green: 0.16, blue: 0.22)) }
+        if state == "white-shell" { desktop.setShellColor(ShellColor(red: 1, green: 1, blue: 1)) }
+        if state == "black-shell" { desktop.setShellColor(ShellColor(red: 0, green: 0, blue: 0)) }
+        if state == "green-shell" { desktop.setShellColor(ShellColor(red: 0, green: 1, blue: 0)) }
+        if state == "food" { precondition(care.needTime == "03:00") }
+        if (state == "rest" || state == "work") && !compact {
+            if state == "rest" {
+                let before = care.cycle.restDeadline
+                precondition(care.configureSchedule(workMinutes: "20", breakMinutes: "10") == nil)
+                precondition(care.cycle.restDeadline == before)
+            }
+            let settings = DeviceMenuView(desktop: desktop, care: care, savedReceipt: nil, canRename: true, canStop: true, rename: {}, stop: {}, dismiss: {})
+            let bitmap = nativeBitmap(settings, size: CGSize(width: 256, height: 620), scale: 2)
+            try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("settings-during-\(state)-2x.png"))
+        }
+        if state == "idle" && !compact {
+            let menu = DeviceMenuView(desktop: desktop, care: care, savedReceipt: nil, canRename: true, canStop: true, rename: {}, stop: {}, dismiss: {})
+            // Native NSColorWell/NSSwitch cannot be drawn by ImageRenderer.
+            // Host only this fake-data menu in an undisplayed AppKit window.
+            let host = NSHostingView(rootView: menu.background(Color.white))
+            let size = host.fittingSize
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            host.frame = CGRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            guard let menuBitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("Menu bitmap") }
+            host.cacheDisplay(in: host.bounds, to: menuBitmap)
+            precondition(!window.isVisible, "Menu snapshot cannot show a window")
+            try menuBitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("settings-menu-native.png"))
+            window.close()
+        }
+        let view = PetDeviceView(model: model, care: care, desktop: desktop)
+            .environment(\.petMotionVisible, false)
+        for scale in [1,2] {
+            let size = compact ? CGSize(width: 160, height: 128) : CGSize(width: 247, height: 304)
+            let bitmap = nativeBitmap(view, size: size, scale: scale)
+            let w = Int(size.width)*scale, h = Int(size.height)*scale
+            precondition(bitmap.pixelsWide == w && bitmap.pixelsHigh == h, "Device has stable bounds")
+            for (x,y) in [(0,0),(w-1,0),(0,h-1),(w-1,h-1),(w/2,0)] {
+                precondition(bitmap.colorAt(x: x, y: y)!.alphaComponent == 0, "Outside shell must be transparent")
+            }
+            if !compact { precondition(bitmap.colorAt(x: w/2, y: h/2)!.alphaComponent == 1, "LCD must be visible") }
+            let opaque = (0..<h).contains { y in (0..<w).contains { x in bitmap.colorAt(x: x, y: y)!.alphaComponent > 0 } }
+            precondition(opaque, "Every mode must show the pet")
+            guard let png = bitmap.representation(using: .png, properties: [:]) else { fatalError("PNG") }
+            try png.write(to: output.appendingPathComponent("\(state)-\(compact ? "compact" : "full")-\(scale)x.png"))
+            count += 1
+        }
+        return count
+    }
+    static func renderKeys(output: URL) throws -> Int {
+        var count = 0
         for color in [ShellColor.default, ShellColor(red: 0.94, green: 0.52, blue: 0.65),
                       ShellColor(red: 0, green: 0, blue: 0), ShellColor(red: 1, green: 1, blue: 1),
                       ShellColor(red: 0, green: 1, blue: 0)] {
@@ -159,6 +207,6 @@ struct DeviceRenderChecks {
                 }
             }
         }
-        print("PASS DeviceRenderChecks: \(count) actual PetDeviceView renders, 13 states plus 20 actual key palette samples, normal/pet-only, 1x/2x, transparent outer corners, custom colors, visible pet and settings menu; OS interactions remain separate")
+        return count
     }
 }

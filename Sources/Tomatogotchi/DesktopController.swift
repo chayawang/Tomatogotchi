@@ -15,6 +15,31 @@ final class DesktopController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var animationVisible = false
     private var motionSuspended = false
     private weak var window: NSWindow?
+    private var completionPanel: NSPanel?
+    func dismissCompletionPanel() { completionPanel?.close(); completionPanel = nil }
+    func presentCompletionPanel(care: CareModel) {
+        guard ownsSession, care.reminderMode == .strong, care.completionNoticeID != nil else { return }
+        dismissCompletionPanel()
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 200),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        panel.title = "工作時間到了"
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = NSHostingView(rootView: CompletionReminderView(
+            demand: care.cycle.demand?.needTitle ?? "準備休息吧。",
+            dismiss: { [weak self, weak care] in care?.acknowledgeCompletion(); self?.dismissCompletionPanel() },
+            showPet: { [weak self, weak care] in
+                care?.acknowledgeCompletion(); self?.dismissCompletionPanel(); self?.show()
+            }))
+        let screen = window?.screen ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2))
+        } else { panel.center() }
+        completionPanel = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
     private var savedFrame: CGRect?
     private let preferencesURL: URL
     private var adjusting = false
@@ -257,11 +282,25 @@ struct DesktopRootView: View {
         .preferredColorScheme(.light)
         .environment(\.petMotionVisible, desktop.animationVisible)
         .background(DesktopWindowReader { desktop.attach($0); syncCare() }.frame(width: 0, height: 0))
-        .onAppear { syncCare() }
+        .onAppear {
+            care.revealForHatching = { [weak desktop] in desktop?.show() }
+            syncCare()
+        }
         .onChange(of: model.pet?.id) { _ in syncCare() }
         .onChange(of: model.saving) { saving in if !saving { syncCare() } }
-        .onChange(of: model.screen) { _ in syncCare() }
+        .onChange(of: model.screen) { screen in
+            if screen != .home { care.cancelHatchingPresentation() }
+            syncCare()
+        }
         .onChange(of: care.cycle.phase) { _ in syncCare() }
+        .onChange(of: care.reminderMode) { mode in
+            if mode == .gentle { desktop.dismissCompletionPanel() }
+        }
+        .onChange(of: care.completionNoticeID) { notice in
+            if notice != nil, model.screen == .home, model.pet?.growth.stage != .departed {
+                desktop.presentCompletionPanel(care: care)
+            } else { desktop.dismissCompletionPanel() }
+        }
         .onChange(of: care.cycle.restDeadline) { _ in syncCare() }
         .onChange(of: desktop.compact) { _ in syncCare() }
         .onChange(of: model.pet?.growth.stage) { _ in syncCare() }
@@ -327,5 +366,25 @@ struct WindowDragRegion: NSViewRepresentable {
                 NotificationCenter.default.post(name: DesktopController.petDidDrag, object: window)
             }
         }
+    }
+}
+
+struct CompletionReminderView: View {
+    var demand: String
+    var dismiss: () -> Void
+    var showPet: () -> Void
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("工作時間到了").font(Theme.font(22, bold: true))
+            Text(demand + " 你也休息一下吧。")
+                .font(Theme.font(14)).multilineTextAlignment(.center)
+            HStack(spacing: 12) {
+                Button("關閉提醒", action: dismiss).buttonStyle(PetButtonStyle(secondary: true)).keyboardShortcut(.cancelAction)
+                Button("看看電子雞", action: showPet).buttonStyle(PetButtonStyle()).keyboardShortcut(.defaultAction)
+            }
+            Text("關閉提醒後，照顧需求仍會保留。")
+                .font(Theme.font(11)).foregroundStyle(Theme.muted)
+        }.padding(24).frame(width: 360, height: 200)
+            .background(Theme.surface).foregroundStyle(Theme.ink)
     }
 }

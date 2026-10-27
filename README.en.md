@@ -15,7 +15,9 @@ A pixel pet living in a corner of your Mac desktop. Build a routine of focused w
 
 ## Current version
 
-**1.0.2 build31, public prerelease**. The download supports Apple Silicon (arm64) only. The declared minimum is macOS 13; the physical test baseline is Apple Silicon with macOS 14.4.1. Intel and the minimum OS have not been physically tested. The App has an ad-hoc development signature, **no Developer ID signature and no Apple notarization**. Downloaded installation through Finder/Gatekeeper and some native interactions still need manual verification. Automated rendering and process checks do not establish full physical-device coverage.
+**1.0.3 build38, public prerelease**. The download supports Apple Silicon (arm64) only. The declared minimum is macOS 13; the physical test baseline is Apple Silicon with macOS 14.4.1. Intel and the minimum OS have not been physically tested. The App has an ad-hoc development signature, **no Developer ID signature and no Apple notarization**. Downloaded installation through Finder/Gatekeeper and some native interactions still need manual verification. Automated rendering and process checks do not establish full physical-device coverage.
+
+- v1.0.3 adds selectable completion reminders, hatching on the first care response, next-round duration settings during rest, and matching adoption colors.
 
 - Customize work and rest durations for each round, with suggested shortcuts.
 - Idle, sleep, play, and short walks during work; actual walks can roam the current display's desktop and return when time expires.
@@ -24,7 +26,7 @@ A pixel pet living in a corner of your Mac desktop. Build a routine of focused w
 
 ## Getting started
 
-Read the [installation and user guide](docs/user-guide.en.md) and [release limitations](docs/releases/v1.0.2.en.md). Use `shasum -a 256 "path/to/downloaded-file"` to compare a download with the official Release's SHA256SUMS.txt. Obtain the reference from this repository; a checksum supplied by a third party does not establish the official source.
+Read the [installation and user guide](docs/user-guide.en.md) and [release limitations](docs/releases/v1.0.3.en.md). Use `shasum -a 256 "path/to/downloaded-file"` to compare a download with the official Release's SHA256SUMS.txt. Obtain the reference from this repository; a checksum supplied by a third party does not establish the official source.
 
 ## Build from source
 

@@ -54,6 +54,16 @@ struct CareFlowChecks {
         let model = CareModel(directory: root, ownsSession: true, reminderCenter: center,
             workspaceNotifications: events, chooseDemand: { .food }, automaticallyTicks: false,
             now: { clock.date }, uptime: { clock.uptime })
+        try check(model.reminderMode == .gentle, "New sessions default to gentle reminders")
+        model.setReminderMode(.strong)
+        let preferenceCopy = CareModel(directory: root, ownsSession: false, reminderCenter: TestCenter(),
+            workspaceNotifications: NotificationCenter(), automaticallyTicks: false)
+        try check(preferenceCopy.reminderMode == .strong, "Reminder preference persists in this isolated directory")
+        let other = CareModel(directory: root.appendingPathComponent("other"), ownsSession: false,
+            reminderCenter: TestCenter(), workspaceNotifications: NotificationCenter(), automaticallyTicks: false)
+        try check(other.reminderMode == .gentle, "Separate directory has independent reminder preference")
+        preferenceCopy.setReminderMode(.gentle)
+        try check(preferenceCopy.reminderMode == .strong, "Secondary session cannot write preferences")
         let owner = UUID()
         model.start(for: owner)
         model.start(for: owner)
@@ -84,9 +94,15 @@ struct CareFlowChecks {
         }
         clock.advance(240); model.refresh()
         try check(model.cycle.phase == .needsCare && model.workTime == "00:00", "Model becomes due at exact deadline")
+        let notice = model.completionNoticeID
+        try check(notice == model.cycle.demandID, "Exact completion produces attention event")
+        model.acknowledgeCompletion(); model.refresh()
+        try check(model.completionNoticeID == nil && model.cycle.phase == .needsCare,
+                  "Acknowledgment stops presentation without clearing need; refresh does not replay")
         events.post(name: NSWorkspace.willSleepNotification, object: nil)
         try check(model.cycle.phase == .paused && center.requests.isEmpty, "Due care need also pauses")
         model.resume()
+        try check(model.completionNoticeID == nil, "Resume never replays completion alert")
         try check(model.cycle.phase == .needsCare, "Resume preserves due need without granting new work")
         model.rest(.food)
         let deadline = model.cycle.restDeadline
@@ -233,6 +249,67 @@ struct CareFlowChecks {
         try check(customSecondary.configureSchedule(workMinutes: "60", breakMinutes: "15") != nil &&
                   (try Data(contentsOf: customRoot.appendingPathComponent("care.json"))) == customBytes,
                   "Secondary session cannot change preferences")
+        let nextFolder = root.appendingPathComponent("next-round")
+        let nextClock = TestClock()
+        let nextModel = CareModel(directory: nextFolder, ownsSession: true, reminderCenter: TestCenter(),
+            workspaceNotifications: NotificationCenter(), automaticallyTicks: false,
+            now: { nextClock.date }, uptime: { nextClock.uptime })
+        nextModel.start(for: owner); nextClock.advance(20); nextModel.rest(.food)
+        let activeDeadline = nextModel.cycle.restDeadline
+        let activeRestID = nextModel.cycle.restID
+        try check(nextModel.canConfigureSchedule && nextModel.configureSchedule(workMinutes: "20", breakMinutes: "10") == nil,
+                  "Settings can save next round during an active rest")
+        try check(nextModel.cycle.restDeadline == activeDeadline && nextModel.cycle.restID == activeRestID && nextModel.restTime == "05:00",
+                  "Saving next round cannot alter current rest deadline, ID or countdown")
+        let reopenedRest = CareModel(directory: nextFolder, ownsSession: true, reminderCenter: TestCenter(),
+            workspaceNotifications: NotificationCenter(), automaticallyTicks: false,
+            now: { nextClock.date }, uptime: { nextClock.uptime })
+        try check(reopenedRest.cycle.configuredWorkDuration == 1200 && reopenedRest.cycle.configuredBreakDuration == 600 &&
+                  reopenedRest.cycle.restDeadline == activeDeadline, "Restart retains pending preferences and original active rest")
+        // The form is open while resting; its button click itself crosses the deadline.
+        nextClock.advance(300)
+        try check(nextModel.configureSchedule(workMinutes: "30", breakMinutes: "15") != nil && nextModel.cycle.phase == .restComplete,
+                  "At deadline, configuration must wait for unsaved growth")
+        let currentReceipt = nextModel.cycle.completedReceipt
+        try check(currentReceipt != nil && nextModel.cycle.restID == activeRestID &&
+                  nextModel.cycle.configuredWorkDuration == 1200, "Boundary failure preserves receipt and prior pending values")
+        nextModel.start(for: owner)
+        try check(nextModel.cycle.completedReceipt == currentReceipt && nextModel.cycle.phase == .restComplete,
+                  "Pending settings never bypass growth-save guard")
+        nextModel.start(for: owner, afterSaving: currentReceipt)
+        try check(nextModel.cycle.remainingWork == 1200 && nextModel.cycle.breakDuration == 600,
+                  "Manual start after saved receipt uses next round preferences")
+        nextModel.pause()
+        let pausedSchedule = nextModel.cycle
+        try check(!nextModel.canConfigureSchedule && nextModel.configureSchedule(workMinutes: "1", breakMinutes: "1") != nil &&
+                  nextModel.cycle == pausedSchedule, "Paused work settings remain disabled")
+        nextModel.stop()
+        try check(nextModel.configureSchedule(workMinutes: "1", breakMinutes: "1") == nil, "Stopped work can be configured")
+        nextModel.start(for: owner); nextModel.rest(.walk)
+        let timerFile = nextFolder.appendingPathComponent("care.json")
+        let priorTimerBytes = try Data(contentsOf: timerFile)
+        try FileManager.default.moveItem(at: timerFile, to: nextFolder.appendingPathComponent("care-preserved.json"))
+        try FileManager.default.createDirectory(at: timerFile, withIntermediateDirectories: false)
+        try check(nextModel.configureSchedule(workMinutes: "40", breakMinutes: "10") != nil && nextModel.needsReset,
+                  "Pending preference write failure reports error and blocks further changes")
+        try check(try Data(contentsOf: nextFolder.appendingPathComponent("care-preserved.json")) == priorTimerBytes,
+                  "Write failure cannot overwrite previous isolated timer snapshot")
+        // The visible-view handshake is cancellable; delayed UI callbacks cannot
+        // commit care after stop, lock, reset or quit.
+        var committedPresentation = false
+        var presentationReveals = 0
+        custom.revealForHatching = { presentationReveals += 1 }
+        for action in ["stop", "lock", "quit"] {
+            custom.prepareHatchingPresentation { committedPresentation = true }
+            let request = custom.hatchingPresentationID!
+            if action == "stop" { custom.stop() }
+            else if action == "lock" { custom.pauseForSafety() }
+            else { custom.prepareToQuit() }
+            custom.confirmHatchingPresentation(request)
+            try check(!committedPresentation && custom.hatchingPresentationID == nil,
+                      "Cancelled first-care presentation cannot save from a stale callback")
+        }
+        try check(presentationReveals == 3, "Each preparation requests one reveal")
         print("PASS CareFlowChecks: shared App model countdown/pause/resume, duplicate start, notification cleanup, system event adapters, due/rest, receipt guard, quit/reopen, secondary isolation and denial fallback")
     }
 }

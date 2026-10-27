@@ -41,7 +41,18 @@ public struct Pet: Codable, Equatable, Sendable {
                 _ = try vitals.decode([String: NeedRecord].self, forKey: .needs)
             }
             growth = try c.decode(PetGrowth.self, forKey: .growth)
-            guard storedStage == growth.stage.rawValue else { throw PetError.damagedSave }
+            enum HatchingKeys: String, CodingKey { case hasCompletedWork }
+            let hatching = try c.nestedContainer(keyedBy: HatchingKeys.self, forKey: .growth)
+            if hatching.contains(.hasCompletedWork) {
+                guard storedStage == growth.stage.rawValue else { throw PetError.damagedSave }
+            } else {
+                // Validate the original format's stage before applying the new
+                // threshold in memory. Never accept an arbitrary stage mismatch.
+                let previousStage: GrowthStage = growth.departedAt != nil ? .departed
+                    : growth.completedRests.count >= 12 ? .adult
+                    : growth.completedRests.count >= 3 ? .hatchling : .egg
+                guard storedStage == previousStage.rawValue else { throw PetError.damagedSave }
+            }
             if version < 4, growth.species != .forPet(id) { throw PetError.damagedSave }
         }
         saveVersion = 4

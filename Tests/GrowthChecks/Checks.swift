@@ -17,8 +17,20 @@ struct GrowthChecks {
         var p = try Pet(id: id, name: "小葉", now: now, species: .cat)
         p.advanceNeglect(seconds: 999999, context: .awaitingCare, now: now)
         try require(p.growth.stage == .egg && p.growth.neglectedSeconds == 0, "Eggs cannot starve")
+        try p.completeRest(id: "rest-1", food: true, now: now)
+        try require(p.growth.stage == .egg, "Completing an early rest does not count as full work")
+        let completedWork = UUID()
+        try p.applyNeed(id: completedWork, food: true, steps: 0, responding: false, now: now)
+        try require(p.growth.stage == .egg && p.growth.hasCompletedWork,
+                    "First completed work alone keeps the egg")
+        try p.applyNeed(id: completedWork, food: true, steps: 0, responding: true, now: now)
+        try require(p.growth.stage == .hatchling && p.growth.completedRests.count == 1,
+                    "First care response hatches without granting a rest receipt")
+        let hatched = p
+        try p.applyNeed(id: completedWork, food: true, steps: 0, responding: false, now: now)
+        try require(p == hatched, "Completion replay is idempotent")
         for n in 1...3 { try p.completeRest(id: "rest-\(n)", food: true, now: now) }
-        try require(p.growth.stage == .hatchling && p.growth.species == .cat, "Three rests hatch a stable cat")
+        try require(p.growth.stage == .hatchling && p.growth.species == .cat, "Completed work keeps stable cat through rests")
         try p.completeRest(id: "rest-3", food: true, now: now)
         try require(p.growth.completedRests.count == 3, "Receipt retries cannot duplicate growth")
         for context in [CareContext.working, .resting, .paused, .offline, .idle] {
@@ -43,6 +55,37 @@ struct GrowthChecks {
         let root = fm.temporaryDirectory.appendingPathComponent("Tomatogotchi-Growth-\(UUID())")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
+        for species in PetSpecies.allCases {
+            for rests in [0, 1, 2, 3, 12] {
+                var old = try Pet(name: "舊夥伴", now: now, species: species)
+                for n in 0..<rests { try old.completeRest(id: "old-\(n)", food: true, now: now) }
+                var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]
+                var growth = object["growth"] as! [String: Any]
+                growth.removeValue(forKey: "hasCompletedWork"); growth.removeValue(forKey: "hasHatched"); object["growth"] = growth
+                object["lifeStage"] = rests >= 12 ? "adult" : rests >= 3 ? "hatchling" : "egg"
+                let folder = root.appendingPathComponent("legacy-\(species)-\(rests)")
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = folder.appendingPathComponent("pet.json")
+                let bytes = try JSONSerialization.data(withJSONObject: object); try bytes.write(to: file)
+                let loaded = try await PetRepository(directory: folder).load()!
+                try require(loaded.growth.stage == (rests < 3 ? .egg : rests == 12 ? .adult : .hatchling),
+                            "Legacy eggs keep original stage until explicit care")
+                try require(loaded.growth.species == species && (try Data(contentsOf: file)) == bytes,
+                            "Legacy compatibility keeps species and exact original bytes")
+            }
+        }
+        // build33/34 stored a completed-work marker and may already be hatched.
+        for species in PetSpecies.allCases {
+            var oldHatchling = try Pet(species: species)
+            try oldHatchling.applyNeed(id: UUID(), food: true, steps: 0, responding: false, now: now)
+            var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(oldHatchling)) as! [String: Any]
+            var growth = object["growth"] as! [String: Any]
+            growth.removeValue(forKey: "hasHatched"); object["growth"] = growth
+            object["lifeStage"] = "hatchling"
+            let decoded = try JSONDecoder().decode(Pet.self, from: JSONSerialization.data(withJSONObject: object)).validated()
+            try require(decoded.growth.stage == .hatchling && decoded.growth.species == species,
+                        "Already hatched build33/34 pets never revert to an egg")
+        }
         let primary = root.appendingPathComponent("pet.json")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Pet(id: id, name: "舊蛋", now: now))) as! [String: Any]
         legacy["saveVersion"] = 1; legacy.removeValue(forKey: "growth")

@@ -14,6 +14,7 @@ import PetCore
     @Published var pet: Pet
     init() {
         var p = try! Pet(id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!, name: "QA")
+        try! p.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date(timeIntervalSince1970: 0))
         for n in 0..<3 { try! p.completeRest(id: "live-\(n)", food: true, now: Date(timeIntervalSince1970: 0)) }
         pet = p
     }
@@ -82,6 +83,38 @@ import PetCore
             driver.context = .sleeping
             let sleeping = try await frames("sleep", count: 7, delay: 250_000_000)
             precondition(sleeping.count >= 2, "Sleep must animate breathing")
+            // Use the actual view transition, not a second animation implementation.
+            driver.context = .wandering
+            var firstEgg = try Pet(id: driver.pet.id, name: "QA", species: .cat)
+            driver.pet = firstEgg
+            try await Task.sleep(nanoseconds: 150_000_000)
+            let intact = try snapshot("hatching-intact")
+            try firstEgg.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date())
+            driver.pet = firstEgg
+            try await Task.sleep(nanoseconds: 150_000_000)
+            let cracked = try snapshot("hatching-cracked")
+            precondition(cracked != intact, "Live first-work transition must show a visible crack")
+            let wobbling = try await frames("hatching-wobble", count: 9, delay: 120_000_000)
+            precondition(wobbling.count >= 2, "Cracked egg must visibly wobble")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            driver.reduced = true
+            try await Task.sleep(nanoseconds: 100_000_000)
+            let finalHatchling = try snapshot("hatching-finished")
+            precondition(hidden.contains(finalHatchling), "Animation must finish as the exact persisted static hatchling")
+            // Leaving the view during hatching must cancel without replay on return.
+            driver.reduced = false
+            var secondEgg = try Pet(id: driver.pet.id, name: "QA", species: .cat)
+            driver.pet = secondEgg
+            try await Task.sleep(nanoseconds: 100_000_000)
+            try secondEgg.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date())
+            driver.pet = secondEgg
+            try await Task.sleep(nanoseconds: 100_000_000)
+            driver.visible = false
+            try await Task.sleep(nanoseconds: 100_000_000)
+            driver.visible = true; driver.reduced = true
+            try await Task.sleep(nanoseconds: 100_000_000)
+            let cancelledHatchling = try snapshot("hatching-cancelled")
+            precondition(cancelledHatchling == finalHatchling, "Hidden hatching must not replay on return")
             var dead = driver.pet
             try dead.applyNeed(id: UUID(), food: true, steps: 5, responding: false, now: Date(timeIntervalSince1970: 1))
             driver.pet = dead

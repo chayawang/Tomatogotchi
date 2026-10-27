@@ -8,15 +8,19 @@ The App currently uses Traditional Chinese labels. Original labels are included 
 
 The only official App download page is https://github.com/chayawang/Tomatogotchi/releases .
 
-Version 1.0.2 build31 is a public prerelease for Apple Silicon only, without Developer ID signing or Apple notarization. Check the filename and official SHA-256, extract it to a location you choose, then open it. Quit the old App and back up your data before updating. Do not run multiple production versions at once.
+Version 1.0.3 build38 is a public prerelease for Apple Silicon only, without Developer ID signing or Apple notarization. Check the filename and official SHA-256, extract it to a location you choose, then open it. Quit the old App and back up your data before updating. Do not run multiple production versions at once.
 
 If macOS blocks an unidentified developer or an unnotarized App, first verify the source and assess the risk. If you choose to trust it, follow [Apple's instructions](https://support.apple.com/102445) and use “Open Anyway” under System Settings → Privacy & Security for this App; wording varies by OS version. You do not need to give the publisher your Mac or Apple ID password. Stop and report the issue if macOS warns of malware, damage, or harm to your computer. Do not disable Gatekeeper globally or bypass workplace policies. The downloaded App's real Gatekeeper installation flow still needs manual verification.
 
 ## Adopt an egg and work
 
-Adopt an unknown egg and optionally name it; you can rename it later. In the device menu, “每輪時間” (round durations) lets you set work and rest to 1–1440 minutes. Work shortcuts are 10/20/30/60 minutes; rest shortcuts are 5/10/15. Apply the settings before starting. End the current work session before changing durations.
+Adopt an unknown egg and optionally name it; you can rename it later. In the device menu, “每輪時間” (round durations) lets you set work and rest to 1–1440 minutes. Work shortcuts are 10/20/30/60 minutes; rest shortcuts are 5/10/15. Apply the settings before starting. Durations are locked during work, including paused work. During rest, you can set the next round without changing the current countdown; the settings apply when you manually start work again.
 
-When work ends, a feeding or walking request appears. Respond to begin rest. Each accumulated three minutes of active unanswered waiting removes one health or mood unit; reaching zero in either causes death. Paused, ended, sleeping, locked, closed, and offline periods do not incur catch-up penalties. Three complete rest rounds hatch the egg; twelve produce an adult. The unknown egg's species is fixed to one of five, and restarting does not reroll it.
+When work ends, a feeding or walking request appears. Respond to begin rest. Each accumulated three minutes of active unanswered waiting removes one health or mood unit; reaching zero in either causes death. Paused, ended, sleeping, locked, closed, and offline periods do not incur catch-up penalties. The egg remains an egg after the first complete work round. The first successful response to “餵牠吃飯” (feed) or “帶牠晃晃” (walk) plays the crack, wobble, and hatch sequence. Dismissing a reminder or taking an early break does not hatch it. Twelve complete rest rounds produce an adult. The unknown egg's species is fixed to one of five, and restarting does not reroll it.
+
+## Completion reminders
+
+Choose gentle or strong reminders in settings before work ends. Gentle mode, the default, uses a device animation; strong mode also shows a central popup. Both retain macOS notifications, subject to your permission and system settings. Dismissing a reminder leaves the care request pending. Responding to the first care request while hidden reveals the egg before hatching. Adoption and naming keep the original rectangular layout with colors matching the device.
 
 ## Modes and walking
 

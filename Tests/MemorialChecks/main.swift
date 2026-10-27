@@ -59,6 +59,7 @@ struct MemorialChecks {
         for version in [1, 2, 3] {
             let id = UUID();var pet = try Pet(id: id, name: "舊紀錄\(version)", now: now, species: .forPet(id))
             if version == 2 {
+                try pet.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: now)
                 for n in 0..<3 { try pet.completeRest(id: "old\(n)", food: true, now: now) }
                 pet.advanceNeglect(seconds: 4500, context: .awaitingCare, now: now.addingTimeInterval(900))
             } else if version == 3 { try pet.applyNeed(id: UUID(), food: true, steps: 5, responding: false, now: now.addingTimeInterval(800)) }

@@ -97,6 +97,47 @@ struct CareChecks {
             _ = try JSONDecoder().decode(CareCycle.self, from: badData).validated()
             throw NSError(domain: "CareChecks", code: 1, userInfo: [NSLocalizedDescriptionKey: "Inconsistent phase must be rejected"])
         } catch CareError.invalidState { }
+        var next = try CareCycle(workDuration: 3600, breakDuration: 600)
+        next.bind(to: owner); next.start(); next.advance(workElapsed: 20, now: now)
+        next.rest(.walk, now: now)
+        let currentRest = next
+        try next.configure(workMinutes: 1, breakMinutes: 2)
+        try require(next.restDeadline == currentRest.restDeadline && next.restID == currentRest.restID &&
+                    next.remainingWork == currentRest.remainingWork && next.workDuration == 3600 && next.breakDuration == 600,
+                    "Early rest keeps current durations, unused work, deadline and receipt identity")
+        try require(next.configuredWorkDuration == 60 && next.configuredBreakDuration == 120,
+                    "Pending preferences are available to settings")
+        next = try JSONDecoder().decode(CareCycle.self, from: JSONEncoder().encode(next)).validated()
+        try require(next.nextWorkDuration == 60 && next.restRemaining(now: now) == 600,
+                    "Pending settings and current rest independently round-trip")
+        let invalidNext = next
+        do { try next.configure(workMinutes: 0, breakMinutes: 2); throw CareError.unsupportedVersion }
+        catch CareError.invalidState { }
+        try require(next == invalidNext, "Invalid pending preferences never change rest")
+        var legacyRest = try JSONSerialization.jsonObject(with: JSONEncoder().encode(currentRest)) as! [String: Any]
+        legacyRest.removeValue(forKey: "restID")
+        var legacyNext = try JSONDecoder().decode(CareCycle.self, from: JSONSerialization.data(withJSONObject: legacyRest))
+        var originalLegacy = legacyNext
+        try legacyNext.configure(workMinutes: 20, breakMinutes: 15)
+        originalLegacy.advance(workElapsed: 0, now: now.addingTimeInterval(600))
+        legacyNext.advance(workElapsed: 0, now: now.addingTimeInterval(600))
+        try require(legacyNext.completedReceipt == originalLegacy.completedReceipt,
+                    "Legacy receipt derived from break duration remains identical after preference edits")
+        next.advance(workElapsed: 0, now: now.addingTimeInterval(600))
+        try require(next.completedReceipt?.completedAt == currentRest.restDeadline,
+                    "Current rest completes at its original deadline")
+        next.start()
+        try require(next.remainingWork == 60 && next.workDuration == 60 && next.breakDuration == 120 &&
+                    next.nextWorkDuration == nil, "Next manual work promotes pending preferences once")
+        next.pause()
+        let pausedNext = next
+        do { try next.configure(workMinutes: 10, breakMinutes: 5); throw CareError.unsupportedVersion }
+        catch CareError.invalidState { }
+        try require(next == pausedNext, "Paused work remains protected")
+        var cancelledRest = invalidNext
+        cancelledRest.stop()
+        try require(cancelledRest.workDuration == 60 && cancelledRest.breakDuration == 120 && cancelledRest.remainingWork == 60,
+                    "Ending rest keeps saved preferences for next work")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Tomatogotchi-Care-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

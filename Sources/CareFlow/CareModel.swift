@@ -3,6 +3,11 @@ import Combine
 import UserNotifications
 import CareCore
 
+public enum CompletionReminderMode: String, Codable, CaseIterable, Sendable {
+    case gentle, strong
+    public var title: String { self == .gentle ? "溫和提醒" : "強烈提醒" }
+}
+
 @MainActor
 public final class CareModel: NSObject, ObservableObject {
     // Preserve the existing App default for new users; stored preferences take precedence.
@@ -12,6 +17,30 @@ public final class CareModel: NSObject, ObservableObject {
     @Published public private(set) var storageError: String?
     @Published public private(set) var needsReset = false
     @Published public private(set) var notificationHint = "開始陪伴後，可選擇開啟系統通知。"
+    @Published public private(set) var completionNoticeID: UUID?
+    @Published public private(set) var reminderMode: CompletionReminderMode = .gentle
+    @Published public private(set) var reminderPreferenceError: String?
+    private let reminderPreferenceURL: URL
+    /// The App requests a visible egg before committing its first care response.
+    @Published public private(set) var hatchingPresentationID: UUID?
+    public var revealForHatching: (() -> Void)?
+    private var pendingFirstCare: (() -> Void)?
+    public func prepareHatchingPresentation(_ completion: @escaping () -> Void) {
+        guard ownsSession, !needsReset, hatchingPresentationID == nil else { return }
+        guard let revealForHatching else { completion(); return }
+        pendingFirstCare = completion
+        hatchingPresentationID = UUID()
+        revealForHatching()
+    }
+    public func confirmHatchingPresentation(_ id: UUID) {
+        guard hatchingPresentationID == id else { return }
+        let completion = pendingFirstCare
+        pendingFirstCare = nil; hatchingPresentationID = nil
+        completion?()
+    }
+    public func cancelHatchingPresentation() {
+        pendingFirstCare = nil; hatchingPresentationID = nil
+    }
     public var onNeedUpdate: ((CareNeedProgress) -> Void)?
     private let chooseDemand: () -> CareActivity
     private let lockNotifications: NotificationCenter
@@ -50,6 +79,11 @@ public final class CareModel: NSObject, ObservableObject {
         self.workspaceNotifications = workspaceNotifications ?? NSWorkspace.shared.notificationCenter
         self.now = now; self.uptimeNow = uptime
         self.chooseDemand = chooseDemand; self.lockNotifications = lockNotifications
+        reminderPreferenceURL = directory.appendingPathComponent("completion-reminder.json")
+        if FileManager.default.fileExists(atPath: reminderPreferenceURL.path) {
+            do { reminderMode = try JSONDecoder().decode(CompletionReminderMode.self, from: Data(contentsOf: reminderPreferenceURL)) }
+            catch { reminderPreferenceError = "提醒設定無法讀取，先使用溫和提醒；原檔保留。" }
+        }
         store = CareStore(directory: directory)
         self.ownsSession = ownsSession
         var initial = try! CareCycle(workDuration: Self.defaultWorkDuration)
@@ -89,6 +123,16 @@ public final class CareModel: NSObject, ObservableObject {
         }
     }
 
+    public func setReminderMode(_ mode: CompletionReminderMode) {
+        guard ownsSession else { return }
+        do {
+            try FileManager.default.createDirectory(at: reminderPreferenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(mode).write(to: reminderPreferenceURL, options: .atomic)
+            reminderMode = mode; reminderPreferenceError = nil
+        } catch { reminderPreferenceError = "提醒設定還沒存好，保留原本模式，請再試一次。" }
+    }
+    public func acknowledgeCompletion() { completionNoticeID = nil }
+
     public var compactStatus: String {
         switch cycle.phase {
         case .idle: return "先一起待著吧。"
@@ -108,7 +152,7 @@ public final class CareModel: NSObject, ObservableObject {
         CountdownDisplay.text(seconds: cycle.restRemaining(now: clock))
     }
     public var canConfigureSchedule: Bool {
-        ownsSession && !needsReset && (cycle.phase == .idle || cycle.phase == .restComplete)
+        ownsSession && !needsReset && (cycle.phase == .idle || cycle.phase == .resting || cycle.phase == .restComplete)
     }
     /// Completed growth must be saved before leaving the previous round.
     public func configureSchedule(workMinutes: String, breakMinutes: String,
@@ -119,12 +163,20 @@ public final class CareModel: NSObject, ObservableObject {
             return "請輸入 1 到 1440 的整數分鐘。"
         }
         guard canConfigureSchedule, cycle.canLeaveCompletedRest(afterSaving: receipt) else {
-            return "請先收工，或等這次休息的成長保存完成，再設定下一輪。"
+            return "專注進行中無法調整；休息時可設定下一輪，休息完成則先等成長保存。"
         }
+        var blockedAtDeadline = false
         change {
+            // refresh() may cross the rest deadline after the form was checked.
+            // Never stop that round until its growth receipt is saved.
+            guard $0.canLeaveCompletedRest(afterSaving: receipt),
+                  $0.phase == .idle || $0.phase == .resting || $0.phase == .restComplete else {
+                blockedAtDeadline = true; return
+            }
             if $0.phase == .restComplete { $0.stop() }
             try! $0.configure(workMinutes: work, breakMinutes: rest)
         }
+        if blockedAtDeadline { return "這次休息剛完成，請等成長保存後再套用。" }
         return storageError
     }
     public func bind(to petID: UUID) { change { $0.bind(to: petID) } }
@@ -149,6 +201,7 @@ public final class CareModel: NSObject, ObservableObject {
         }
     }
     public func stop(afterSaving receipt: CompletedRest? = nil) {
+        cancelHatchingPresentation()
         change {
             guard $0.canLeaveCompletedRest(afterSaving: receipt) else { return }
             $0.stop()
@@ -156,10 +209,12 @@ public final class CareModel: NSObject, ObservableObject {
     }
     public func prepareToQuit() {
         guard ownsSession else { return }
-        refresh(); cycle.pause(); cancelNotification(); persist()
+        cancelHatchingPresentation()
+        refresh(); cycle.pause(); completionNoticeID = nil; cancelNotification(); persist()
     }
     public func reset() {
         guard ownsSession else { return }
+        cancelHatchingPresentation()
         do {
             var fresh = try store.reset()
             try fresh.setWorkDuration(Self.defaultWorkDuration)
@@ -174,7 +229,8 @@ public final class CareModel: NSObject, ObservableObject {
     @objc private func systemPaused() { pauseForSafety() }
     public func pauseForSafety() {
         guard ownsSession, !needsReset else { return }
-        cycle.pause(); lastTick = uptimeNow(); clock = now(); cancelNotification(); persist()
+        cancelHatchingPresentation()
+        cycle.pause(); completionNoticeID = nil; lastTick = uptimeNow(); clock = now(); cancelNotification(); persist()
     }
     @discardableResult
     private func change(_ action: (inout CareCycle) -> Void) -> Bool {
@@ -182,6 +238,7 @@ public final class CareModel: NSObject, ObservableObject {
         refresh()
         let previous = cycle
         action(&cycle)
+        if cycle.phase != .needsCare { completionNoticeID = nil }
         lastTick = uptimeNow()
         guard previous != cycle else { return false }
         cancelNotification()
@@ -203,13 +260,17 @@ public final class CareModel: NSObject, ObservableObject {
         } else if (cycle.phase == .working || cycle.phase == .needsCare) && uptime - lastCheckpoint >= 10 {
             persist()
         }
+        if phase == .working && cycle.phase == .needsCare && storageError == nil {
+            completionNoticeID = cycle.demandID
+        }
+        if cycle.phase != .needsCare { completionNoticeID = nil }
         if deliverNeed, storageError == nil, let progress = cycle.needProgress { onNeedUpdate?(progress) }
     }
     private func persist() {
         guard !needsReset else { return }
         do { try store.save(cycle); storageError = nil; lastCheckpoint = uptimeNow() }
         catch {
-            cycle.pause(); cancelNotification(); lastTick = uptimeNow(); needsReset = true
+            cycle.pause(); completionNoticeID = nil; cancelNotification(); lastTick = uptimeNow(); needsReset = true
             storageError = "計時還沒存好，已停止。原檔會保留，請重設這次計時。"
         }
     }
