@@ -7,3 +7,7 @@ python3 scripts/check-app-icon.py
 python3 scripts/check-live-presentation.py
 
 python3 scripts/check-extra-pets.py
+
+python3 scripts/check-first-care-hatching.py
+
+python3 scripts/check-adoption-presentation.py

@@ -54,6 +54,7 @@ struct PetButtonStyle: ButtonStyle {
 }
 
 struct EggStage: View {
+    var cracked = false
     var height: CGFloat = 144
     var framed = true
     private static let egg: CGImage? = {
@@ -65,12 +66,23 @@ struct EggStage: View {
         Group {
             if let egg = Self.egg {
                 Image(decorative: egg, scale: 1).resizable().interpolation(.none).frame(width: 80, height: 100)
+                    .overlay {
+                        if cracked {
+                            Path { path in
+                                path.move(to: CGPoint(x: 40, y: 12))
+                                for point in [CGPoint(x: 46, y: 28), CGPoint(x: 34, y: 40),
+                                              CGPoint(x: 46, y: 52), CGPoint(x: 36, y: 65), CGPoint(x: 42, y: 86)] {
+                                    path.addLine(to: point)
+                                }
+                            }.stroke(Theme.ink, style: StrokeStyle(lineWidth: 4, lineCap: .square, lineJoin: .miter))
+                        }
+                    }
                     .padding(.top, 6).padding(.bottom, 6).padding(.horizontal, 8)
             } else { Text("蛋圖載入失敗").foregroundStyle(Theme.muted) }
         }
         .frame(maxWidth: .infinity).frame(height: height)
         .background(framed ? Theme.canvas : Color.clear).clipShape(RoundedRectangle(cornerRadius: 8))
-        .accessibilityElement(children: .ignore).accessibilityLabel("一顆尚未孵化的未知像素蛋")
+        .accessibilityElement(children: .ignore).accessibilityLabel(cracked ? "蛋出現裂痕，正在孵化" : "一顆尚未孵化的未知像素蛋")
     }
 }
 
@@ -110,11 +122,17 @@ struct PetStage: View {
     var framed = true
     var visualContext: PetVisualContext = .wandering
     var movesWithinContainer = true
+    var hatchingRequestID: UUID?
+    var onHatchingReady: ((UUID) -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.petMotionVisible) private var motionVisible
     @State private var blinking = false
     @State var plan = PetAnimationPlan()
     @State private var walkElapsed: Double = 0
+    @State private var previousStage: GrowthStage?
+    @State private var hatching = false
+    @State private var hatchFrame = 0
+    private var hatchTaskID: String { "\(pet?.id.uuidString ?? "none")-\(hatching)-\(motionVisible)-\(reduceMotion)-\(pet?.growth.stage.rawValue ?? "none")" }
     private var animates: Bool {
         guard let pet else { return false }
         return motionVisible && !reduceMotion &&
@@ -140,7 +158,11 @@ struct PetStage: View {
         return result
     }()
     var body: some View {
-        if pet?.growth.stage == .departed {
+        ZStack {
+        if hatching && pet?.growth.stage == .hatchling && motionVisible && !reduceMotion {
+            EggStage(cracked: true, height: height, framed: framed)
+                .offset(x: hatchFrame == 0 ? 0 : hatchFrame % 2 == 0 ? -4 : 4)
+        } else if pet?.growth.stage == .departed {
             TombstoneStage(height: height, framed: framed)
         } else if let pet, pet.growth.stage != .egg {
             GeometryReader { geometry in
@@ -186,5 +208,34 @@ struct PetStage: View {
                 } catch { /* Cancellation never writes pet/care data or replays missed frames. */ }
             }
         } else { EggStage(height: height, framed: framed) }
+        }
+        .onAppear { previousStage = pet?.growth.stage }
+        .task(id: "\(hatchingRequestID?.uuidString ?? "none")-\(motionVisible)-\(pet?.id.uuidString ?? "none")") {
+            guard let request = hatchingRequestID, motionVisible, pet?.growth.stage == .egg else { return }
+            // This task runs from the visible egg's actual SwiftUI view.
+            previousStage = .egg
+            onHatchingReady?(request)
+        }
+        .onChange(of: pet?.id) { _ in hatching = false; previousStage = pet?.growth.stage }
+        .onChange(of: pet?.growth.stage) { stage in
+            if previousStage == .egg && stage == .hatchling && motionVisible && !reduceMotion {
+                hatchFrame = 0; hatching = true
+            }
+            previousStage = stage
+        }
+        .task(id: hatchTaskID) {
+            guard hatching else { return }
+            guard motionVisible, !reduceMotion, pet?.growth.stage == .hatchling else { hatching = false; return }
+            do {
+                // Crack first, then four discrete wobbles, then the persisted hatchling.
+                try await Task.sleep(nanoseconds: 600_000_000)
+                for frame in 1...4 {
+                    try Task.checkCancellation()
+                    hatchFrame = frame
+                    try await Task.sleep(nanoseconds: 180_000_000)
+                }
+                hatching = false
+            } catch { /* Hidden/reduced/replaced views never replay missed hatching. */ }
+        }
     }
 }

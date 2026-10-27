@@ -78,7 +78,7 @@ struct SurvivalChecks {
             pet = try await repo.load()!
             try check((demand == .food ? pet.growth.health : pet.growth.mood) == 4, "Concurrent response recovers only one cell")
             pet = try await repo.applyNeed(petID: id, needID: need.id, food: demand == .food, steps: 5, responding: false, now: date)
-            try check(pet.growth.stage == .egg, "Late stale demand cannot kill a responded pet")
+            try check(pet.growth.stage == .hatchling, "Late stale demand cannot kill a responded pet")
             let nextID = UUID()
             pet = try await repo.applyNeed(petID: id, needID: nextID, food: demand == .food, steps: 4, responding: true, now: date)
             try check(pet.growth.stage == .departed && pet.growth.deathReason == (demand == .food ? .hunger : .sadness), "Zero vital dies before response; eggs follow latest survival rule")
@@ -93,6 +93,65 @@ struct SurvivalChecks {
             let afterReplacement = try await repo.load()
             try check(afterReplacement == fresh, "Old need cannot charge replacement pet")
         }
+        for species in PetSpecies.allCases {
+          for activity in [CareActivity.food, .walk] {
+            let directory = root.appendingPathComponent("first-work-\(species.rawValue)-\(activity.rawValue)")
+            let repository = PetRepository(directory: directory)
+            let egg = try await repository.adopt(Pet(name: "First work", species: species))
+            let adoption = AdoptionModel(repository: repository); adoption.load()
+            try await until { adoption.screen == .home }
+            let firstClock = Clock()
+            let firstCare = CareModel(directory: directory, ownsSession: true, reminderCenter: SilentCenter(),
+                workspaceNotifications: NotificationCenter(), lockNotifications: NotificationCenter(),
+                chooseDemand: { activity }, automaticallyTicks: false, now: { firstClock.date }, uptime: { firstClock.uptime })
+            CareActions.connect(model: adoption, care: firstCare)
+            firstCare.start(for: egg.id); firstClock.advance(299); firstCare.refresh()
+            firstCare.pause(); firstClock.advance(1000); firstCare.refresh()
+            try check(adoption.pet?.growth.stage == .egg, "Incomplete and paused work cannot hatch")
+            firstCare.stop(); firstCare.start(for: egg.id); firstCare.rest(.food)
+            firstClock.advance(300); firstCare.refresh()
+            adoption.recordRest(firstCare.cycle.completedReceipt!); try await until { !adoption.saving }
+            try check(adoption.pet?.growth.stage == .egg, "Completed early rest cannot substitute for full work")
+            firstCare.stop(afterSaving: firstCare.cycle.completedReceipt); firstCare.start(for: egg.id)
+            firstClock.advance(300); firstCare.refresh()
+            try await until { !adoption.saving }
+            try check(adoption.pet?.growth.stage == .egg && adoption.pet?.growth.hasCompletedWork == true,
+                      "Work deadline and reminders leave the new egg intact")
+            firstCare.acknowledgeCompletion()
+            let coldEgg = try await repository.load()!
+            try check(coldEgg.growth.stage == .egg, "Acknowledgment and cold reload cannot hatch")
+            let backup = directory.appendingPathComponent("pet.backup.json")
+            try FileManager.default.removeItem(at: backup)
+            try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+            let original = try Data(contentsOf: directory.appendingPathComponent("pet.json"))
+            CareActions.respond(model: adoption, care: firstCare)
+            try await until { !adoption.saving && adoption.progressError != nil }
+            try check(adoption.pet?.growth.stage == .egg && firstCare.cycle.phase == .paused,
+                      "First-care save failure keeps egg and pauses")
+            try check(try Data(contentsOf: directory.appendingPathComponent("pet.json")) == original,
+                      "Failed hatching preserves exact primary bytes")
+            try FileManager.default.removeItem(at: backup)
+            var revealed = 0
+            firstCare.revealForHatching = { revealed += 1 }
+            CareActions.respond(model: adoption, care: firstCare)
+            let presentation = firstCare.hatchingPresentationID!
+            try check(revealed == 1 && !adoption.saving && adoption.pet?.growth.stage == .egg,
+                      "First care waits for a visible egg before saving")
+            CareActions.respond(model: adoption, care: firstCare)
+            firstCare.confirmHatchingPresentation(UUID())
+            try check(revealed == 1 && firstCare.hatchingPresentationID == presentation && !adoption.saving,
+                      "Repeated clicks and stale presentation acknowledgments cannot commit")
+            firstCare.confirmHatchingPresentation(presentation)
+            try await until { !adoption.saving && firstCare.cycle.phase == .resting }
+            let stored = try await repository.load()!
+            try check(stored.growth.stage == .hatchling && stored.growth.species == species && stored.growth.needs.count == 1,
+                      "Retry and cold load retain one completed work and stable species")
+            try check(stored.growth.completedRests.count == 1, "Hatching never adds a rest receipt")
+            let deadline = firstCare.cycle.restDeadline
+            CareActions.respond(model: adoption, care: firstCare)
+            try check(firstCare.cycle.restDeadline == deadline && !adoption.saving, "Repeated response cannot replay hatch or reset rest")
+          }
+        }
         // Shared App coordinator, not a duplicate simulation of the UI code.
         let folder = root.appendingPathComponent("app"), repo = PetRepository(directory: folder)
         let initial = try await repo.adopt(Pet(name: "實機模型"))
@@ -106,6 +165,8 @@ struct SurvivalChecks {
         try check(care.startTitle == "開始工作", "No ambiguous 5/5 or evolution choice")
         care.start(for: initial.id)
         clock.advance(300 + 179); care.refresh()
+        try await until { !model.saving }
+        try check(model.pet?.growth.stage == .egg, "Completed work keeps egg until first explicit response")
         try check(model.pet?.growth.mood == 5, "No loss one second before grace boundary")
         clock.advance(1); CareActions.respond(model: model, care: care)
         try await until { !model.saving && care.cycle.phase == .resting }
@@ -114,6 +175,7 @@ struct SurvivalChecks {
         model.recordRest(care.cycle.completedReceipt!); try await until { !model.saving }
         care.stop(afterSaving: care.cycle.completedReceipt)
         care.start(for: initial.id); clock.advance(300+100); care.refresh()
+        try await until { !model.saving }
         let before = care.cycle.needProgress
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             // A delayed inactivity event cannot count its delayed interval.

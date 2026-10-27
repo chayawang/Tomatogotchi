@@ -12,7 +12,7 @@ struct CareView: View {
         VStack(spacing: 16) {
             Text(title).font(Theme.font(24, bold: true)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Text(subtitle).font(Theme.font(14)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-            PetStage(pet: model.pet)
+            PetStage(pet: model.pet, hatchingRequestID: care.hatchingPresentationID, onHatchingReady: care.confirmHatchingPresentation)
             if care.showsWorkCountdown && !care.needsReset {
                 Text(care.workTime).font(Theme.font(36, bold: true)).monospacedDigit()
                     .accessibilityLabel("工作剩餘 \(care.workTime)")
@@ -64,6 +64,7 @@ struct CareView: View {
         case .resting:
             Text(care.restTime).font(Theme.font(36, bold: true)).monospacedDigit().foregroundStyle(Theme.muted)
                 .accessibilityLabel("休息剩餘 \(care.restTime)")
+            DurationSettingsView(care: care)
             primary("結束這次休息") { care.stop() }
             secondary("藏到選單列") { desktop.hide() }
             caption("不用留在螢幕前；晚回來也沒關係。")

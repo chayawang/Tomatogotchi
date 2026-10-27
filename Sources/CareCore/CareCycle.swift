@@ -35,6 +35,10 @@ public struct CareCycle: Codable, Equatable, Sendable {
     public private(set) var restID: UUID?
     public private(set) var workDuration: TimeInterval
     public private(set) var breakDuration: TimeInterval
+    public private(set) var nextWorkDuration: TimeInterval?
+    public private(set) var nextBreakDuration: TimeInterval?
+    public var configuredWorkDuration: TimeInterval { nextWorkDuration ?? workDuration }
+    public var configuredBreakDuration: TimeInterval { nextBreakDuration ?? breakDuration }
     public private(set) var demand: CareActivity?
     public private(set) var demandID: UUID?
     public private(set) var demandElapsed: TimeInterval = 0
@@ -46,7 +50,7 @@ public struct CareCycle: Codable, Equatable, Sendable {
     public var nextPenaltyRemaining: TimeInterval { 180 - demandElapsed.truncatingRemainder(dividingBy: 180) }
     private enum CodingKeys: String, CodingKey {
         case version, phase, remainingWork, restDeadline, activity, petID, restID, workDuration, breakDuration
-        case demand, demandID, demandElapsed
+        case demand, demandID, demandElapsed, nextWorkDuration, nextBreakDuration
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -57,6 +61,8 @@ public struct CareCycle: Codable, Equatable, Sendable {
         remainingWork = try c.decode(TimeInterval.self, forKey: .remainingWork)
         workDuration = try c.decode(TimeInterval.self, forKey: .workDuration)
         breakDuration = try c.decode(TimeInterval.self, forKey: .breakDuration)
+        nextWorkDuration = try c.decodeIfPresent(TimeInterval.self, forKey: .nextWorkDuration)
+        nextBreakDuration = try c.decodeIfPresent(TimeInterval.self, forKey: .nextBreakDuration)
         restDeadline = try c.decodeIfPresent(Date.self, forKey: .restDeadline)
         activity = try c.decodeIfPresent(CareActivity.self, forKey: .activity)
         petID = try c.decodeIfPresent(UUID.self, forKey: .petID)
@@ -89,14 +95,28 @@ public struct CareCycle: Codable, Equatable, Sendable {
         workDuration = seconds
         remainingWork = phase == .idle ? seconds : min(remainingWork, seconds)
     }
-    /// User preferences can only change an idle round, never an active deadline.
+    /// During rest, save preferences separately so even legacy receipts and
+    /// early-rest remaining work retain their exact original values.
     public mutating func configure(workMinutes: Int, breakMinutes: Int) throws {
-        guard phase == .idle, (1...1440).contains(workMinutes), (1...1440).contains(breakMinutes) else {
+        guard phase == .idle || phase == .resting,
+              (1...1440).contains(workMinutes), (1...1440).contains(breakMinutes) else {
             throw CareError.invalidState
         }
-        workDuration = Double(workMinutes) * 60
-        breakDuration = Double(breakMinutes) * 60
-        remainingWork = workDuration
+        if phase == .resting {
+            nextWorkDuration = Double(workMinutes) * 60
+            nextBreakDuration = Double(breakMinutes) * 60
+        } else {
+            workDuration = Double(workMinutes) * 60
+            breakDuration = Double(breakMinutes) * 60
+            remainingWork = workDuration
+            nextWorkDuration = nil; nextBreakDuration = nil
+        }
+    }
+    private mutating func applyNextSchedule() {
+        if let work = nextWorkDuration, let rest = nextBreakDuration {
+            workDuration = work; breakDuration = rest
+        }
+        nextWorkDuration = nil; nextBreakDuration = nil
     }
     public mutating func bind(to id: UUID) {
         if let petID, petID != id { stop() }
@@ -115,6 +135,7 @@ public struct CareCycle: Codable, Equatable, Sendable {
     }
     public mutating func start(demand: CareActivity = .food) {
         guard phase == .idle || phase == .restComplete else { return }
+        applyNextSchedule()
         phase = .working; remainingWork = workDuration; restDeadline = nil; activity = nil; restID = nil
         self.demand = demand; demandID = UUID(); demandElapsed = 0
     }
@@ -148,6 +169,7 @@ public struct CareCycle: Codable, Equatable, Sendable {
         if phase == .paused { phase = remainingWork == 0 ? .needsCare : .working }
     }
     public mutating func stop() {
+        applyNextSchedule()
         phase = .idle; remainingWork = workDuration; restDeadline = nil; activity = nil; restID = nil
         demand = nil; demandID = nil; demandElapsed = 0
     }
@@ -161,6 +183,14 @@ public struct CareCycle: Codable, Equatable, Sendable {
               workDuration > 0, breakDuration > 0, remainingWork >= 0,
               remainingWork <= max(workDuration, 5 * 60),
               restDeadline?.timeIntervalSince1970.isFinite ?? true else { throw CareError.invalidState }
+        guard (nextWorkDuration == nil) == (nextBreakDuration == nil) else { throw CareError.invalidState }
+        if let nextWorkDuration, let nextBreakDuration {
+            guard phase == .resting || phase == .restComplete,
+                  nextWorkDuration.isFinite, nextBreakDuration.isFinite,
+                  (60...86400).contains(nextWorkDuration), (60...86400).contains(nextBreakDuration),
+                  nextWorkDuration.truncatingRemainder(dividingBy: 60) == 0,
+                  nextBreakDuration.truncatingRemainder(dividingBy: 60) == 0 else { throw CareError.invalidState }
+        }
         if phase == .resting || phase == .restComplete {
             guard restDeadline != nil && activity != nil else { throw CareError.invalidState }
         } else if restDeadline != nil || activity != nil || restID != nil { throw CareError.invalidState }

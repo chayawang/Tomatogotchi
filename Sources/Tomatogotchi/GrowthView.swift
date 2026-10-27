@@ -10,13 +10,13 @@ struct GrowthView: View {
     private var count: Int { model.pet?.growth.completedRests.count ?? 0 }
     private var committed: Bool { model.hasSavedRest(care.cycle.completedReceipt) }
     private var title: String {
-        if count == 3 { return "蛋裡住著一隻\(model.pet?.growth.species.label ?? "小傢伙")。" }
+        if count == 1 { return "蛋裡住著一隻\(model.pet?.growth.species.label ?? "小傢伙")。" }
         return count == 12 ? "牠長大了一點。" : "牠休息好了。"
     }
     var body: some View {
         VStack(spacing: 16) {
             Text(title).font(Theme.font(24, bold: true)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-            Text(count == 3 ? "謝謝你這幾次有停下來休息。" : "你休息的時候，牠也慢慢長大。")
+            Text(count == 1 ? "第一次照顧牠，牠就來見你了。" : "你休息的時候，牠也慢慢長大。")
                 .font(Theme.font(14)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             PetStage(pet: model.pet)
             Text(model.pet?.growth.label ?? "未知蛋").font(Theme.font(12)).foregroundStyle(Theme.muted)

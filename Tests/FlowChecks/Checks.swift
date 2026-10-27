@@ -117,7 +117,15 @@ struct FlowChecks {
         var cycle = try CareCycle(workDuration: 10, breakDuration: 5)
         cycle.bind(to: growthID)
         for n in 1...3 {
-            cycle.start(); cycle.rest(.food, now: date.addingTimeInterval(Double(n) * 10))
+            cycle.start()
+            cycle.advance(workElapsed: 10, now: date.addingTimeInterval(Double(n) * 10))
+            growing.recordNeed(cycle.needProgress!)
+            try await settle(growing)
+            try require(growing.pet?.growth.stage == (n == 1 ? .egg : .hatchling), "Work completion does not hatch a new egg")
+            growing.recordNeed(cycle.needProgress!, responding: true)
+            try await settle(growing)
+            try require(growing.pet?.growth.stage == .hatchling, "First successful care response hatches")
+            cycle.rest(.food, now: date.addingTimeInterval(Double(n) * 10))
             cycle.advance(workElapsed: 0, now: date.addingTimeInterval(Double(n) * 10 + 5))
             let receipt = cycle.completedReceipt!
             growing.recordRest(receipt); growing.recordRest(receipt)
@@ -125,7 +133,7 @@ struct FlowChecks {
             try await settle(growing)
             try require(growing.pet?.growth.completedRests.count == n && growing.hasSavedRest(receipt), "Model counts each rest once after commit")
         }
-        try require(growing.pet?.growth.stage == .hatchling, "App model hatches after three rests")
+        try require(growing.pet?.growth.stage == .hatchling, "Completed rests retain the already hatched pet")
         let coldGrowth = AdoptionModel(repository: PetRepository(directory: growthFolder))
         coldGrowth.load(); try await settle(coldGrowth)
         try require(coldGrowth.pet == growing.pet, "Growth and species survive model restart")

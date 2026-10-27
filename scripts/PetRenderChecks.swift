@@ -12,6 +12,7 @@ struct PetRenderChecks {
         for (species, suffix) in [("cat", "00"), ("dinosaur", "01"), ("dog", "02"), ("daruma", "03"), ("goblin", "04")] {
             for rests in [3, 12] {
                 var pet = try Pet(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000" + suffix)!, name: "QA")
+                try pet.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date(timeIntervalSince1970: 0))
                 for n in 0..<rests { try pet.completeRest(id: "qa-\(n)", food: true, now: Date(timeIntervalSince1970: 0)) }
                 precondition(pet.growth.species.rawValue == species)
                 for scale in [1, 2] {
@@ -85,6 +86,7 @@ struct PetRenderChecks {
         for suffix in ["00", "01", "02", "03", "04"] {
             for rests in [3, 12] {
                 var pet = try Pet(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000" + suffix)!, name: "QA")
+                try pet.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date(timeIntervalSince1970: 0))
                 for n in 0..<rests { try pet.completeRest(id: "motion-\(n)", food: true, now: Date(timeIntervalSince1970: 0)) }
                 for height in [78, 112] {
                     for scale in [1, 2] {

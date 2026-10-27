@@ -47,6 +47,7 @@ extension EnvironmentValues {
         folder = directory
         try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var pet = try! Pet(name: "視窗隔離測試")
+        try! pet.applyNeed(id: UUID(), food: true, steps: 0, responding: true, now: Date(timeIntervalSince1970: 0))
         for n in 0..<3 { try! pet.completeRest(id: "motion-hatch-\(n)", food: true, now: Date()) }
         try! JSONEncoder().encode(pet).write(to: folder.appendingPathComponent("pet.json"))
         Theme.registerFont()
