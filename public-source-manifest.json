@@ -11,9 +11,9 @@
     "DISCLAIMER.zh-TW.md": "c44b742f11ed1b71d46c1498fcf25f942317a48e0c8113613222aae693c8f998",
     "LICENSE": "1c8d44a6a25c2cb3f20477dd7039d5377cef1ff469eb51faeafbbc49aea94380",
     "Package.swift": "a0d531c0383681a74e00a0c144bc9cbf1502d462403b725e923ab0397a3e9d39",
-    "README.en.md": "ade35020bf4b1aa321bd9e732a93bd407f9395f1080943b09afddd595894252e",
-    "README.ja.md": "d6554703ee37f1c759ed4d9870a3e8300c3f245d0e5b123fa95d1e9e8189016e",
-    "README.md": "4712160ac4603c3166c468489c3ec310b36563b799b6b75567d3df6c00f664eb",
+    "README.en.md": "3fc7466061af7c03f819e5a769456ce3d23aa87b5fb97f9e3828bf368d0c05dc",
+    "README.ja.md": "5322b59f2ad80487fe0aaa7e2fc02229e3acc0f1426d8985839e885df66152af",
+    "README.md": "51b4ba5fd5150481c97953e574e79573b23409ca80438f79f1d94fe96d187b64",
     "SECURITY.en.md": "c920be9636631846e3b8ac33d6abb478b51b602bd6bbbff930179ae481c72943",
     "SECURITY.ja.md": "de6143d84ba14feccd3e739f488fe953ec25787c8caad08dc398398939a83e34",
     "SECURITY.md": "f3ec5827e48a0e6774cab1292955e4d8188ed14be51434d51fd89addfe7209c8",
@@ -522,6 +522,9 @@
     "scripts/package-release.py": "6dc5d29e2b42fb631af88a769c358666e74e0429b2c73f01b6f02f6ee5ba192c",
     "scripts/prepare-native-qa.py": "89cef6645184e5eb6366dbdf3688121a2514dd2a1d84ad5d0aa313d14f5c6378",
     "scripts/verify-device.sh": "d1f472fd9dca30712773a991ce223b4888a0767381354c2ddc8618713f438416",
-    "scripts/verify.sh": "1bd21ab75bcee11c307196c08995df4dd6f6a4aeb3609ca01d4e5336ba325580"
+    "scripts/verify.sh": "1bd21ab75bcee11c307196c08995df4dd6f6a4aeb3609ca01d4e5336ba325580",
+    "docs/images/work.png": "44a4694177174dd23169d6e311fa3666929e64730348998b2b0e37657693efbf",
+    "docs/images/care.png": "e75229e78a124059cfa4e83de9fb546661360ac4d061b7fe44f436ba8f26d5b6",
+    "docs/images/rest.png": "9920c785bf1a96259c8631e0f34e30d23a25492fbc138e5c4d209bf36a37b257"
   }
 }

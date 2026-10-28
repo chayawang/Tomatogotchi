@@ -4,6 +4,15 @@
 
 住在 Mac 桌面角落的像素電子雞：透過工作計時、照顧與休息，一起養成陪伴習慣。不必登入、不需要 AI API。
 
+## 畫面預覽
+
+| 工作倒數 | 等待照顧 | 休息中 |
+| :---: | :---: | :---: |
+| <img src="docs/images/work.png" alt="工作倒數：寵物陪伴與剩餘時間" width="220"> | <img src="docs/images/care.png" alt="等待照顧：寵物肚子餓了，等待餵食" width="220"> | <img src="docs/images/rest.png" alt="休息中：寵物吃飯，使用者休息" width="220"> |
+
+以上為獨立測試資料產生的實際介面 QA 渲染，介面文字為繁體中文；圖中時間為示例，工作與休息時間皆可調整。
+
+
 ## 官方來源與安全
 
 - 官方原始碼：[chayawang/Tomatogotchi](https://github.com/chayawang/Tomatogotchi)

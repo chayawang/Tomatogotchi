@@ -4,6 +4,15 @@
 
 Macのデスクトップの片隅で暮らすピクセルのペット。作業タイマー、お世話、休憩を通じて、一緒に毎日の習慣を育てます。ログインやAI APIは不要です。
 
+## 画面プレビュー
+
+| 作業タイマー | お世話の時間 | 休憩中 |
+| :---: | :---: | :---: |
+| <img src="docs/images/work.png" alt="ペットと残り時間を表示する作業タイマー" width="220"> | <img src="docs/images/care.png" alt="お腹を空かせてごはんを待つペット" width="220"> | <img src="docs/images/rest.png" alt="ペットが食事をしている間に休憩" width="220"> |
+
+独立したテストデータを使った実際のUIのQAレンダリングです。画面の表示言語は繁体字中国語です。時間は表示例で、作業・休憩時間は変更できます。
+
+
 ## 公式ソースと安全性
 
 - 公式ソース：[chayawang/Tomatogotchi](https://github.com/chayawang/Tomatogotchi)

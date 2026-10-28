@@ -4,6 +4,15 @@
 
 A pixel pet living in a corner of your Mac desktop. Build a routine of focused work, care, and rest together. No account or AI API is required.
 
+## Preview
+
+| Work timer | Time for care | Taking a break |
+| :---: | :---: | :---: |
+| <img src="docs/images/work.png" alt="Work timer with a companion pet and remaining time" width="220"> | <img src="docs/images/care.png" alt="A hungry pet waiting to be fed" width="220"> | <img src="docs/images/rest.png" alt="The pet eats while you take a break" width="220"> |
+
+Actual UI rendered for QA with isolated test data. The interface shown is in Traditional Chinese. Timer values are examples; work and break durations are adjustable.
+
+
 ## Official source and safety
 
 - Official source: [chayawang/Tomatogotchi](https://github.com/chayawang/Tomatogotchi)
